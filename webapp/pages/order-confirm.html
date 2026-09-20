@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单确认 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body>
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="shops.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="shops.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">单</div>
+                <h1>订单确认</h1>
+                <p>选择收货地址 · 确认金额 · 提交订单</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <!-- 确认阶段：地址 + 购物车 + 备注 -->
+            <template v-if="!createdOrder">
+                <div class="toolbar">
+                    <strong>收货地址</strong>
+                    <a class="btn" href="./address.html">管理地址</a>
+                </div>
+                <div class="item-list" v-if="addresses.length">
+                    <label v-for="a in addresses" :key="a.id" class="item-card address-option">
+                        <input type="radio" name="order-address" :value="a.id" v-model="addressId">
+                        <div class="item-main">
+                            <div class="item-title">
+                                {{ a.receiver }} · {{ a.phone }}
+                                <span v-if="a.isDefault" class="badge success">默认地址</span>
+                            </div>
+                            <div class="item-desc">{{ a.detail }}</div>
+                        </div>
+                    </label>
+                </div>
+                <div v-else-if="!loading" class="empty">还没有收货地址，请先前往地址管理添加</div>
+
+                <div class="toolbar">
+                    <strong>{{ cart.shopName || '购物车' }}</strong>
+                    <span class="tip">合计 ¥{{ Number(cart.totalAmount || 0).toFixed(2) }}</span>
+                </div>
+                <div class="item-list">
+                    <div v-for="item in cart.items" :key="item.dishId" class="item-card">
+                        <div class="item-main">
+                            <div class="item-title">{{ item.dishName }}</div>
+                            <div class="item-desc">
+                                ¥{{ Number(item.price).toFixed(2) }} × {{ item.quantity }} = ¥{{ Number(item.subtotal).toFixed(2) }}
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!loading && (!cart.items || cart.items.length === 0)" class="empty">购物车为空，请先加购</div>
+                </div>
+
+                <div class="field">
+                    <label for="o-remark">订单备注（可选）</label>
+                    <textarea id="o-remark" v-model.trim="remark" maxlength="100" placeholder="100 字以内，如：少放辣"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button class="submit" type="button" @click="submitOrder" :disabled="loading">
+                        {{ loading ? '提交中…' : '提交订单' }}
+                    </button>
+                    <a class="btn" href="./shops.html">返回逛店</a>
+                </div>
+            </template>
+
+            <!-- 下单成功阶段：模拟支付 -->
+            <template v-else>
+                <div class="notice success">订单已创建：{{ createdOrder.orderNo }}（初始待支付）</div>
+                <div v-if="paid" class="notice success">支付成功，订单进入待商家处理</div>
+                <div class="form-actions">
+                    <button v-if="!paid" class="submit" type="button" @click="pay" :disabled="loading">
+                        {{ loading ? '支付中…' : '模拟支付' }}
+                    </button>
+                    <a class="btn" href="./shops.html">返回逛店</a>
+                </div>
+            </template>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, post, requireRole } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                addresses: [],
+                addressId: null,
+                cart: { isEmpty: true, shopId: null, shopName: null, items: [], totalAmount: 0 },
+                remark: '',
+                createdOrder: null,
+                paid: false,
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                user: null
+            };
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const [addrResult, cartResult] = await Promise.all([
+                        get('/api/address/list'),
+                        get('/api/cart/list')
+                    ]);
+                    this.addresses = (addrResult && addrResult.data) || [];
+                    const preferred = this.addresses.find(a => a.isDefault) || this.addresses[0];
+                    this.addressId = preferred ? preferred.id : null;
+                    this.cart = (cartResult && cartResult.data)
+                        || { isEmpty: true, shopId: null, shopName: null, items: [], totalAmount: 0 };
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async submitOrder() {
+                if (!this.addressId) { this.showError('请选择收货地址'); return; }
+                if (!this.cart.items || this.cart.items.length === 0) { this.showError('购物车为空，请先加购'); return; }
+                this.loading = true;
+                try {
+                    const tokenResult = await get('/api/order/token');
+                    const token = (tokenResult && tokenResult.data && tokenResult.data.token) || null;
+                    const result = await post('/api/order/create', {
+                        addressId: this.addressId,
+                        remark: this.remark || null,
+                        token: token
+                    });
+                    this.createdOrder = (result && result.data) || {};
+                } catch (e) {
+                    this.showError(e.message || '下单失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async pay() {
+                this.loading = true;
+                try {
+                    await post('/api/order/pay', { orderId: this.createdOrder.orderId });
+                    this.paid = true;
+                } catch (e) {
+                    this.showError(e.message || '支付失败');
+                } finally {
+                    this.loading = false;
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole('CUSTOMER');
+            if (!user) return;
+            this.user = user;
+            this.load();
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

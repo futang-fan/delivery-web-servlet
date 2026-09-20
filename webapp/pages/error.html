@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>页面异常 - 在线外卖点餐与配送调度平台</title>
+    <!-- 样式表由下方脚本按“上下文路径+绝对路径”注入：错误转发时浏览器地址栏保留原始请求 URL，
+         相对路径会按原始 URL 所在目录解析，在不同深度下不可靠，故不用静态 <link> -->
+</head>
+<body>
+<!-- 404/500/Throwable 统一友好错误页（web.xml error-page 指向 /pages/error.html）：
+     纯静态零业务依赖，避免回落 Tomcat 默认错误页泄露容器信息；
+     移入 pages/：PageAuthFilter 默认仅拦截 REQUEST 分发，容器 error-page 走 ERROR 分发
+     不受其登录守卫影响，未登录用户仍能正常看到错误页；未登录直接访问本页则 302 回登录页，属预期 -->
+<div id="app">
+    <main class="page">
+        <section class="card error-card">
+            <p class="error-code">:(</p>
+            <h1>页面暂时无法访问</h1>
+            <p class="tip">您访问的地址不存在，或服务出现了临时异常，请稍后重试。</p>
+            <a id="back-login" class="btn primary" href="login.html">返回登录页</a>
+        </section>
+    </main>
+</div>
+<script>
+    // 上下文判定必须与 common.js 的 CTX（common.js:15，startsWith('/DeliveryWeb')）保持手工同步：
+    // 错误页刻意零 ESM 依赖（避免错误页自身报错形成嵌套失败），不能直接 import 该常量；
+    // 绝对路径不受错误转发时原始请求深度影响
+    (function () {
+        var ctx = location.pathname.indexOf('/DeliveryWeb') === 0 ? '/DeliveryWeb' : '';
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = ctx + '/common/style.css';
+        document.head.appendChild(link);
+        var back = document.getElementById('back-login');
+        if (back) {
+            back.href = ctx + '/pages/login.html';
+        }
+    })();
+    // 静态错误页无 Vue/ESM 依赖，仅按记忆恢复暗色主题（localStorage 键与 common.js 的 DW_THEME 一致）
+    try {
+        if (localStorage.getItem('DW_THEME') === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+    } catch (e) { /* localStorage 不可用时保持亮色 */ }
+</script>
+</body>
+</html>

@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>平台管理 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../libs/element-plus.css">
+    <link rel="stylesheet" href="../common/style.css">
+    <script src="../libs/echarts.min.js"></script>
+    <script type="importmap">
+    { "imports": { "vue": "../libs/vue.esm-browser.prod.js" } }
+    </script>
+</head>
+<body>
+<div id="app" v-cloak class="shell admin-layout">
+    <aside class="admin-side">
+        <div class="admin-side-brand">
+            <span class="topbar-logo">送</span>
+            <span>外卖平台管理</span>
+        </div>
+        <nav class="admin-side-nav">
+            <a v-for="n in sideTabs" :key="n.href" href="#" :class="{ active: tab === n.tab }" @click.prevent="switchTab(n.tab)">{{ n.text }}<span class="nav-badge" v-if="todoBadge(n.href)" :title="todoTitle(n.href)">{{ todoBadge(n.href) }}</span></a>
+            <a href="account.html">账户中心</a>
+        </nav>
+    </aside>
+    <div class="admin-main">
+    <app-topbar :user="user" :show-nav="false" brand="平台管理"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">管</div>
+                <h1>平台管理</h1>
+                <p>{{ tabSubtitle }}</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <!-- 商家审核 -->
+            <template v-if="tab === 'audit'">
+                <div class="toolbar">
+                    <select id="audit-filter" v-model="auditFilter" @change="search">
+                        <option value="PENDING">待审核</option>
+                        <option value="APPROVED">已通过</option>
+                        <option value="REJECTED">已拒绝</option>
+                        <option value="">全部</option>
+                    </select>
+                    <span>共 {{ total }} 家</span>
+                </div>
+
+                <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr>
+                        <th>编号</th><th>店铺</th><th>联系人</th><th>电话</th>
+                        <th>经营地址</th><th>资质说明</th><th>状态</th><th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="s in shops" :key="s.id">
+                        <td>{{ s.id }}</td>
+                        <td>{{ s.name || '（未填写）' }}</td>
+                        <td>{{ s.contact || '—' }}</td>
+                        <td>{{ s.phone || '—' }}</td>
+                        <td><span class="cell-clip" :title="s.address">{{ s.address || '—' }}</span></td>
+                        <td><span class="cell-clip" :title="s.qualification">{{ s.qualification || '—' }}</span></td>
+                        <td>
+                            <span class="badge" :class="auditClass(s.auditStatus)">{{ auditText(s) }}</span>
+                        </td>
+                        <td>
+                            <template v-if="s.auditStatus === 'PENDING'">
+                                <button class="btn primary" type="button" @click="approve(s)" :disabled="loading">通过</button>
+                                <button class="btn" type="button" @click="startReject(s)" :disabled="loading">拒绝</button>
+                            </template>
+                            <template v-else>—</template>
+                        </td>
+                    </tr>
+                    <tr v-if="!loading && shops.length === 0">
+                        <td colspan="8"><div class="empty">没有待处理店铺</div></td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+
+                <!-- 拒绝原因确认区 -->
+                <div v-if="reject.id" class="notice error">
+                    正在拒绝「{{ reject.name }}」：
+                    <textarea v-model.trim="reject.reason" maxlength="200" placeholder="请填写拒绝原因（必填）"></textarea>
+                    <button class="btn primary" type="button" @click="confirmReject" :disabled="loading">确认拒绝</button>
+                    <button class="btn" type="button" @click="cancelReject">取消</button>
+                </div>
+
+                <div class="pager" v-if="total > 0">
+                    <button class="btn" type="button" @click="turn(page - 1)" :disabled="page <= 1 || loading">上一页</button>
+                    <span>第 {{ page }} / {{ pages }} 页</span>
+                    <button class="btn" type="button" @click="turn(page + 1)" :disabled="page >= pages || loading">下一页</button>
+                </div>
+            </template>
+
+            <!-- 用户管理：创建骑手 + 用户列表禁用/启用 -->
+            <template v-else-if="tab === 'users'">
+                <div class="toolbar">
+                    <input id="user-keyword" v-model.trim="userKeyword" placeholder="搜索用户名 / 手机号" @change="searchUsers">
+                    <select id="user-role-filter" v-model="userRoleFilter" @change="searchUsers">
+                        <option value="">全部角色</option>
+                        <option value="CUSTOMER">顾客</option>
+                        <option value="SHOP">商家</option>
+                        <option value="RIDER">骑手</option>
+                        <option value="ADMIN">管理员</option>
+                    </select>
+                    <span>共 {{ userTotal }} 人</span>
+                    <button class="btn primary" type="button" @click="showRiderForm = true" :disabled="loading">创建骑手账号</button>
+                </div>
+
+                <!-- 创建骑手：点击工具栏按钮后展开，与菜品/地址页的内联面板范式一致 -->
+                <form v-if="showRiderForm" novalidate @submit.prevent="createRider" class="panel">
+                    <div class="panel-header">
+                        <strong>创建骑手账号</strong>
+                        <button class="btn" type="button" @click="showRiderForm = false" :disabled="loading">关闭</button>
+                    </div>
+                    <div class="field">
+                        <label for="rider-username">用户名</label>
+                        <input id="rider-username" v-model.trim="riderForm.username" maxlength="16"
+                               placeholder="4-16 位字母、数字或下划线">
+                    </div>
+                    <div class="field">
+                        <label for="rider-password">密码</label>
+                        <input id="rider-password" v-model.trim="riderForm.password" type="password" maxlength="32"
+                               placeholder="不少于 6 位">
+                    </div>
+                    <div class="field">
+                        <label for="rider-phone">手机号</label>
+                        <input id="rider-phone" v-model.trim="riderForm.phone" maxlength="11" placeholder="11 位手机号">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn primary" type="submit" :disabled="loading">创建</button>
+                    </div>
+                </form>
+                <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr><th>编号</th><th>用户名</th><th>角色</th><th>手机号</th><th>状态</th><th>注册时间</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="u in users" :key="u.id">
+                        <td>{{ u.id }}</td>
+                        <td>{{ u.username }}</td>
+                        <td><span class="badge">{{ roleName(u.role) }}</span></td>
+                        <td>{{ u.phone || '—' }}</td>
+                        <td>
+                            <span class="badge" :class="{ success: u.status === 'NORMAL', error: u.status === 'DISABLED' }">
+                                {{ userStatusText(u) }}
+                            </span>
+                        </td>
+                        <td :title="u.createdAt">
+                            <div class="cell-date">{{ datePart(u.createdAt) }}</div>
+                            <div class="tip">{{ timePart(u.createdAt) }}</div>
+                        </td>
+                        <td>
+                            <button v-if="u.status === 'NORMAL'" class="btn danger" type="button"
+                                    @click="setUserStatus(u, 'DISABLED')" :disabled="loading || u.id === user.id">禁用</button>
+                            <button v-else class="btn primary" type="button"
+                                    @click="setUserStatus(u, 'NORMAL')" :disabled="loading">启用</button>
+                        </td>
+                    </tr>
+                    <tr v-if="!loading && users.length === 0">
+                        <td colspan="7"><div class="empty">没有符合条件的用户</div></td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+                <div class="pager" v-if="userTotal > 0">
+                    <button class="btn" type="button" @click="turnUsers(userPage - 1)" :disabled="userPage <= 1 || loading">上一页</button>
+                    <span>第 {{ userPage }} / {{ userPages }} 页</span>
+                    <button class="btn" type="button" @click="turnUsers(userPage + 1)" :disabled="userPage >= userPages || loading">下一页</button>
+                </div>
+            </template>
+
+            <!-- 店铺监管：强制暂停违规店铺营业 -->
+            <template v-else-if="tab === 'shops'">
+                <div class="toolbar">
+                    <span>共 {{ superTotal }} 家店铺</span>
+                    <button class="btn" type="button" @click="loadSuper" :disabled="loading">刷新</button>
+                </div>
+                <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr><th>编号</th><th>店铺</th><th>审核</th><th>营业</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="s in superShops" :key="s.id">
+                        <td>{{ s.id }}</td>
+                        <td>{{ s.name || '（未填写）' }}</td>
+                        <td><span class="badge" :class="auditClass(s.auditStatus)">{{ auditText(s) }}</span></td>
+                        <td>
+                            <span class="badge" :class="{ success: s.businessStatus === 'OPEN' }">
+                                {{ s.businessStatus === 'OPEN' ? '营业中' : '休息中' }}
+                            </span>
+                        </td>
+                        <td>
+                            <button v-if="s.businessStatus === 'OPEN'" class="btn danger" type="button"
+                                    @click="forceClose(s)" :disabled="loading">强制休息</button>
+                            <template v-else>—</template>
+                        </td>
+                    </tr>
+                    <tr v-if="!loading && superShops.length === 0">
+                        <td colspan="5"><div class="empty">没有店铺记录</div></td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+                <div class="pager" v-if="superTotal > 0">
+                    <button class="btn" type="button" @click="turnSuper(superPage - 1)" :disabled="superPage <= 1 || loading">上一页</button>
+                    <span>第 {{ superPage }} / {{ superPages }} 页</span>
+                    <button class="btn" type="button" @click="turnSuper(superPage + 1)" :disabled="superPage >= superPages || loading">下一页</button>
+                </div>
+            </template>
+
+            <!-- 订单查询：动态条件筛选 + 全平台订单表 -->
+            <template v-else-if="tab === 'orders'">
+                <div class="toolbar">
+                    <input id="order-no-filter" v-model.trim="orderQuery.orderNo" placeholder="订单号" @change="searchOrders">
+                    <input id="order-username-filter" v-model.trim="orderQuery.username" placeholder="顾客用户名" @change="searchOrders">
+                    <input id="order-shop-filter" v-model.trim="orderQuery.shopName" placeholder="店铺名" @change="searchOrders">
+                    <select id="order-status-filter" v-model="orderQuery.orderStatus" @change="searchOrders">
+                        <option value="">全部状态</option>
+                        <option value="UNPAID">待支付</option>
+                        <option value="PENDING_ACCEPT">待商家处理</option>
+                        <option value="PREPARING">备餐中</option>
+                        <option value="PENDING_DELIVERY">待配送</option>
+                        <option value="DELIVERING">配送中</option>
+                        <option value="DELIVERED">已送达</option>
+                        <option value="COMPLETED">已完成</option>
+                        <option value="CANCELLED">已取消</option>
+                        <option value="REJECTED">已拒单</option>
+                    </select>
+                </div>
+                <div class="toolbar">
+                    <input id="order-start-date" type="date" v-model="orderQuery.startDate" @change="orderQuick = null; searchOrders">
+                    <span>至</span>
+                    <input id="order-end-date" type="date" v-model="orderQuery.endDate" @change="orderQuick = null; searchOrders">
+                    <span class="quick-range">
+                        <button type="button" :class="['btn', { active: orderQuick === 1 }]" @click="applyOrderQuick(1)" :disabled="loading">今日</button>
+                        <button type="button" :class="['btn', { active: orderQuick === 3 }]" @click="applyOrderQuick(3)" :disabled="loading">近3天</button>
+                        <button type="button" :class="['btn', { active: orderQuick === 7 }]" @click="applyOrderQuick(7)" :disabled="loading">近7天</button>
+                        <button type="button" :class="['btn', { active: orderQuick === 30 }]" @click="applyOrderQuick(30)" :disabled="loading">近30天</button>
+                    </span>
+                    <span>共 {{ orderTotal }} 单</span>
+                    <button class="btn" type="button" @click="exportOrders">导出 CSV</button>
+                </div>
+                <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr><th>订单号</th><th>顾客</th><th>店铺</th><th>实付金额</th><th>支付状态</th><th>订单状态</th><th>下单时间</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="o in adminOrders" :key="o.id">
+                        <td>{{ o.orderNo }}</td>
+                        <td>{{ o.customerName }}</td>
+                        <td>{{ o.shopName }}</td>
+                        <td>¥{{ Number(o.payAmount).toFixed(2) }}</td>
+                        <td><span class="badge" :class="{ success: o.payStatus === 'PAID' }">{{ payText(o) }}</span></td>
+                        <td><span class="badge" :class="statusClass(o)">{{ statusText(o) }}</span></td>
+                        <td :title="o.createdAt">
+                            <div class="cell-date">{{ datePart(o.createdAt) }}</div>
+                            <div class="tip">{{ timePart(o.createdAt) }}</div>
+                        </td>
+                    </tr>
+                    <tr v-if="!loading && adminOrders.length === 0">
+                        <td colspan="7"><div class="empty">没有符合条件的订单</div></td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+                <div class="pager" v-if="orderTotal > 0">
+                    <button class="btn" type="button" @click="turnOrders(orderPage - 1)" :disabled="orderPage <= 1 || loading">上一页</button>
+                    <span>第 {{ orderPage }} / {{ orderPages }} 页</span>
+                    <button class="btn" type="button" @click="turnOrders(orderPage + 1)" :disabled="orderPage >= orderPages || loading">下一页</button>
+                </div>
+            </template>
+
+            <!-- 退款仲裁：商家超时未处理时平台裁定兜底（退款仲裁轻量版） -->
+            <template v-else-if="tab === 'refunds'">
+                <div class="toolbar">
+                    <span>共 {{ refundTotal }} 笔待裁定</span>
+                    <button class="btn" type="button" @click="loadRefunds" :disabled="loading">刷新</button>
+                </div>
+                <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr><th>订单号</th><th>店铺</th><th>顾客</th><th>退款金额</th><th>申请原因</th><th>申请时间</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="r in refunds" :key="r.refundId">
+                        <td>{{ r.orderNo }}</td>
+                        <td>{{ r.shopName }}</td>
+                        <td>{{ r.customerName }}</td>
+                        <td>¥{{ Number(r.payAmount).toFixed(2) }}</td>
+                        <td>{{ r.reason }}</td>
+                        <td :title="r.createdAt">{{ datePart(r.createdAt) }}</td>
+                        <td><button class="btn primary" type="button" @click="openAgree(r, true)" :disabled="loading">裁定同意</button>
+                            <button class="btn danger" type="button" @click="openAgree(r, false)" :disabled="loading">裁定驳回</button></td>
+                    </tr>
+                    <tr v-if="!loading && refunds.length === 0">
+                        <td colspan="7"><div class="empty">暂无待裁定退款</div></td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+                <div class="panel" v-if="agree.refundId">
+                    <div class="panel-header">
+                        <strong>{{ agree.mode ? '裁定同意' : '裁定驳回' }} {{ agree.orderNo }}（退 ¥{{ Number(agree.payAmount).toFixed(2) }}）</strong>
+                        <button class="btn" type="button" @click="agree.refundId = null" :disabled="loading">取消</button>
+                    </div>
+                    <div class="field">
+                        <label for="agree-remark">裁定说明{{ agree.mode ? '（选填）' : '（必填）' }}</label>
+                        <textarea id="agree-remark" v-model.trim="agree.adminRemark" maxlength="200"
+                                  :placeholder="agree.mode ? '选填，如：商家超时未处理，平台裁定同意' : '必填，如：订单已按时送达，申请理由不成立'"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn danger" type="button" @click="confirmAgree" :disabled="loading">
+                            {{ agree.mode ? '确认裁定并退款' : '确认驳回' }}
+                        </button>
+                    </div>
+                </div>
+                <div class="pager" v-if="refundTotal > 0">
+                    <button class="btn" type="button" @click="turnRefunds(refundPage - 1)" :disabled="refundPage <= 1 || loading">上一页</button>
+                    <span>第 {{ refundPage }} / {{ refundPages }} 页</span>
+                    <button class="btn" type="button" @click="turnRefunds(refundPage + 1)" :disabled="refundPage >= refundPages || loading">下一页</button>
+                </div>
+            </template>
+
+            <!-- 数据统计：KPI 卡片 + 销量排行 -->
+            <!-- 找回审批：管理员协助重置密码，同意后下发一次性验证码（线下告知申请人） -->
+            <template v-else-if="tab === 'resets'">
+                <div class="toolbar">
+                    <span>共 {{ resetRequests.length }} 笔申请（内存存储，服务重启即清空）</span>
+                    <button class="btn" type="button" @click="loadResets" :disabled="loading">刷新</button>
+                </div>
+                <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                    <tr><th>编号</th><th>用户名</th><th>手机号</th><th>申请时间</th><th>状态</th><th>验证码</th><th>操作</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="r in resetRequests" :key="r.id">
+                        <td>{{ r.id }}</td>
+                        <td>{{ r.username }}</td>
+                        <td>{{ r.phoneMasked }}</td>
+                        <td>{{ r.createdAt }}</td>
+                        <td>{{ resetStatusText(r.status) }}</td>
+                        <td><code v-if="r.visibleCode" class="reset-code">{{ r.visibleCode }}</code><span v-else>—</span></td>
+                        <td>
+                            <template v-if="r.status === 'PENDING'">
+                                <button class="btn primary" type="button" @click="decideReset(r, true)" :disabled="loading">同意并生成验证码</button>
+                                <button class="btn danger" type="button" @click="decideReset(r, false)" :disabled="loading">作废</button>
+                            </template>
+                            <span v-else>—</span>
+                        </td>
+                    </tr>
+                    <tr v-if="!loading && resetRequests.length === 0">
+                        <td colspan="7"><div class="empty">暂无找回申请</div></td>
+                    </tr>
+                    </tbody>
+                </table>
+                </div>
+                <p class="tip">同意后生成 6 位一次性验证码（5 分钟内有效、错 5 次作废），请线下核实申请人身份后告知；验证码仅在用户重置成功前有效。</p>
+            </template>
+
+            <template v-else-if="tab === 'stats'">
+                <div class="toolbar">
+                    <input id="stats-start-date" type="date" v-model="statsStart" @change="statsQuick = null; loadStats()">
+                    <span>至</span>
+                    <input id="stats-end-date" type="date" v-model="statsEnd" @change="statsQuick = null; loadStats()">
+                    <span class="quick-range">
+                        <button type="button" :class="['btn', { active: statsQuick === 1 }]" @click="applyStatsQuick(1)" :disabled="loading">今日</button>
+                        <button type="button" :class="['btn', { active: statsQuick === 3 }]" @click="applyStatsQuick(3)" :disabled="loading">近3天</button>
+                        <button type="button" :class="['btn', { active: statsQuick === 7 }]" @click="applyStatsQuick(7)" :disabled="loading">近7天</button>
+                        <button type="button" :class="['btn', { active: statsQuick === 30 }]" @click="applyStatsQuick(30)" :disabled="loading">近30天</button>
+                    </span>
+                    <span class="tip">统计所选日期区间，留空则统计全部数据；环比为与等长上一周期的对比</span>
+                </div>
+                <el-row :gutter="16">
+                    <el-col :span="12">
+                        <el-card shadow="hover">
+                            <el-statistic title="交易订单数（已支付未退款）" :value="stats.orderCount"></el-statistic>
+                            <div class="tip" v-if="deltaText('orderCount')">订单数环比 {{ deltaText('orderCount') }}</div>
+                        </el-card>
+                    </el-col>
+                    <el-col :span="12">
+                        <el-card shadow="hover">
+                            <el-statistic title="交易金额（已支付未退款）" :value="Number(stats.totalAmount)" :precision="2" prefix="¥"></el-statistic>
+                            <div class="tip" v-if="deltaText('totalAmount')">金额环比 {{ deltaText('totalAmount') }}</div>
+                        </el-card>
+                    </el-col>
+                </el-row>
+                <div class="toolbar">
+                    <select id="rank-mode" v-model="rankMode">
+                        <option value="shopAmountRank">店铺排行 · 按交易额</option>
+                        <option value="shopQuantityRank">店铺排行 · 按销量件数</option>
+                        <option value="dishQuantityRank">菜品排行 · 按销量件数</option>
+                        <option value="dishAmountRank">菜品排行 · 按交易额</option>
+                    </select>
+                    <span class="tip">{{ rankUnit() }}</span>
+                </div>
+                <!-- A5 四口径排行柱状图 + 店铺交易额占比环形图（复用 ranking 接口已有数据，不新增后端） -->
+                <div ref="rankChart" class="rank-chart"></div>
+                <div ref="pieChart" class="rank-chart"></div>
+                <el-table :data="ranks[rankMode]" size="small" stripe>
+                    <el-table-column type="index" label="#" width="50"></el-table-column>
+                    <el-table-column prop="name" label="名称"></el-table-column>
+                    <el-table-column label="数值" width="140">
+                        <template #default="scope">{{ rankValue(scope.row) }}</template>
+                    </el-table-column>
+                </el-table>
+                <div v-if="!loading && (ranks[rankMode] || []).length === 0" class="empty">暂无交易数据</div>
+            </template>
+
+            <div v-else class="empty">该功能区暂未开放</div>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+    </div>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import ElementPlus from '../libs/element-plus.full.mjs';
+    import { quickRange, get, post, label, AUDIT_STATUS_TEXT, USER_STATUS_TEXT, ORDER_STATUS_TEXT, PAY_STATUS_TEXT, REFUND_STATUS_TEXT, requireRole, ROLE_TEXT, NAV_PAGES, themeMixin, todoMixin, CTX, installShell } from '../common/common.js';
+
+    const todayStr = () => {
+        const d = new Date();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + m + '-' + day;
+    };
+
+    const app = createApp({
+        mixins: [themeMixin, todoMixin],
+        data() {
+            return {
+                tab: 'audit',
+                auditFilter: 'PENDING',
+                shops: [],
+                page: 1,
+                size: 10,
+                total: 0,
+                pages: 0,
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                reject: { id: null, name: '', reason: '' },
+                riderForm: { username: '', password: '', phone: '' },
+                showRiderForm: false,
+                users: [],
+                userPage: 1,
+                userTotal: 0,
+                userPages: 0,
+                userRoleFilter: '',
+                userKeyword: '',
+                superShops: [],
+                superPage: 1,
+                superTotal: 0,
+                superPages: 0,
+                orderQuery: { orderNo: '', username: '', shopName: '', startDate: todayStr(), endDate: todayStr(), orderStatus: '' },
+                adminOrders: [],
+                orderPage: 1,
+                orderTotal: 0,
+                orderPages: 0,
+                refunds: [],
+                refundPage: 1,
+                refundTotal: 0,
+                refundPages: 0,
+                resetRequests: [],
+                agree: { refundId: null, orderNo: '', payAmount: null, adminRemark: '', mode: true },
+                stats: { orderCount: 0, totalAmount: 0 },
+                ranks: { shopAmountRank: [], shopQuantityRank: [], dishQuantityRank: [], dishAmountRank: [] },
+                rankMode: 'shopAmountRank',
+                statsStart: todayStr(),
+                statsEnd: todayStr(),
+                statsQuick: null,
+                orderQuick: null,
+                prevStats: null,
+                user: null
+            };
+        },
+        computed: {
+            /** 侧边栏页签清单单源自 NAV_PAGES.ADMIN（href 含 tab 参数项），杜绝页签漂移 */
+            sideTabs() {
+                return NAV_PAGES.ADMIN
+                    .filter(n => n.href.indexOf('admin.html?tab=') === 0)
+                    .map(n => ({ href: n.href, tab: n.href.split('tab=')[1], text: n.text }));
+            },
+            /** 页头副标题随页签变动，避免固定罗列全部功能区 */
+            tabSubtitle() {
+                const map = {
+                    audit: '商家审核 · 入驻资质校验与通过/拒绝处置',
+                    users: '用户管理 · 创建骑手账号与禁用/启用',
+                    shops: '店铺监管 · 营业状态与强制休息',
+                    orders: '订单查询 · 全平台订单动态条件筛选',
+                    refunds: '退款仲裁 · 商家超时未处理时平台裁定兜底',
+                    resets: '找回审批 · 管理员协助重置密码与一次性验证码下发',
+                    stats: '数据统计 · 交易口径、四榜排行与环比'
+                };
+                return map[this.tab] || map.audit;
+            }
+        },
+        methods: {
+            showError(message) {
+                this.noticeType = 'error';
+                this.notice = message;
+            },
+            showSuccess(message) {
+                this.noticeType = 'success';
+                this.notice = message;
+            },
+            roleName(role) {
+                return ROLE_TEXT[role] || role;
+            },
+            switchTab(key) {
+                this.tab = key;
+                this.notice = '';
+                history.replaceState(null, '', location.pathname + '?tab=' + key);
+                if (key === 'audit') {
+                    this.page = 1;
+                    this.load();
+                } else if (key === 'users') {
+                    this.userPage = 1;
+                    this.loadUsers();
+                } else if (key === 'shops') {
+                    this.superPage = 1;
+                    this.loadSuper();
+                } else if (key === 'orders') {
+                    this.orderPage = 1;
+                    this.loadOrders();
+                } else if (key === 'refunds') {
+                    this.refundPage = 1;
+                    this.loadRefunds();
+                } else if (key === 'resets') {
+                    this.loadResets();
+                } else if (key === 'stats') {
+                    this.loadStats();
+                } else if (key === 'account') {
+                    location.href = 'account.html';
+                }
+            },
+            statusText(o) { return label(ORDER_STATUS_TEXT, o.orderStatus); },
+            payText(o) { return label(PAY_STATUS_TEXT, o.payStatus); },
+            statusClass(o) {
+                if (o.orderStatus === 'COMPLETED' || o.orderStatus === 'DELIVERED') return 'success';
+                if (o.orderStatus === 'CANCELLED' || o.orderStatus === 'REJECTED') return 'error';
+                return '';
+            },
+            userStatusText(u) {
+                return label(USER_STATUS_TEXT, u.status);
+            },
+            datePart(s) { return s ? s.split(' ')[0] : '—'; },
+            timePart(s) { const t = s ? s.split(' ')[1] : ''; return t ? t.slice(0, 5) : ''; },
+            auditText(shop) {
+                return label(AUDIT_STATUS_TEXT, shop.auditStatus);
+            },
+            auditClass(status) {
+                return status === 'APPROVED' ? 'success' : (status === 'REJECTED' ? 'error' : '');
+            },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.page);
+                    params.set('size', this.size);
+                    if (this.auditFilter) params.set('auditStatus', this.auditFilter);
+                    const result = await get('/api/admin/shops?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.shops = data.records || [];
+                    this.total = Number(data.total) || 0;
+                    this.pages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            search() {
+                this.page = 1;
+                this.load();
+            },
+            turn(page) {
+                this.page = page;
+                this.load();
+            },
+            async approve(shop) {
+                this.loading = true;
+                try {
+                    await post('/api/shop/audit', { shopId: shop.id, approved: true });
+                    await this.load();
+                    this.showSuccess('已通过「' + (shop.name || shop.id) + '」');
+                } catch (e) {
+                    this.showError(e.message || '操作失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            startReject(shop) {
+                this.reject = { id: shop.id, name: shop.name, reason: '' };
+            },
+            cancelReject() {
+                this.reject = { id: null, name: '', reason: '' };
+            },
+            async confirmReject() {
+                if (!this.reject.reason) {
+                    this.showError('请填写拒绝原因');
+                    return;
+                }
+                this.loading = true;
+                const name = this.reject.name;
+                try {
+                    await post('/api/shop/audit', {
+                        shopId: this.reject.id,
+                        approved: false,
+                        reason: this.reject.reason
+                    });
+                    this.cancelReject();
+                    await this.load();
+                    this.showSuccess('已拒绝「' + name + '」');
+                } catch (e) {
+                    this.showError(e.message || '操作失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async loadUsers() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.userPage);
+                    params.set('size', this.size);
+                    if (this.userRoleFilter) params.set('role', this.userRoleFilter);
+                    if (this.userKeyword) params.set('keyword', this.userKeyword);
+                    const result = await get('/api/admin/users?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.users = data.records || [];
+                    this.userTotal = Number(data.total) || 0;
+                    this.userPages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载用户列表失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            searchUsers() {
+                this.userPage = 1;
+                this.loadUsers();
+            },
+            turnUsers(page) {
+                this.userPage = page;
+                this.loadUsers();
+            },
+            async setUserStatus(u, status) {
+                this.loading = true;
+                try {
+                    await post('/api/admin/user-status', { userId: u.id, status });
+                    await this.loadUsers();
+                    this.showSuccess((status === 'DISABLED' ? '已禁用' : '已启用') + '「' + u.username + '」');
+                } catch (e) {
+                    this.showError(e.message || '操作失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async createRider() {
+                this.loading = true;
+                try {
+                    await post('/api/admin/create-rider', {
+                        username: this.riderForm.username,
+                        password: this.riderForm.password,
+                        phone: this.riderForm.phone
+                    });
+                    this.riderForm = { username: '', password: '', phone: '' };
+                    this.showRiderForm = false;
+                    await this.loadUsers();
+                    this.showSuccess('骑手账号已创建');
+                } catch (e) {
+                    this.showError(e.message || '创建失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async loadSuper() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const result = await get('/api/admin/shops?page=' + this.superPage + '&size=' + this.size);
+                    const data = (result && result.data) || {};
+                    this.superShops = data.records || [];
+                    this.superTotal = Number(data.total) || 0;
+                    this.superPages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载店铺列表失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            turnSuper(page) {
+                this.superPage = page;
+                this.loadSuper();
+            },
+            async forceClose(shop) {
+                this.loading = true;
+                try {
+                    await post('/api/admin/shop-status', { shopId: shop.id, businessStatus: 'CLOSED' });
+                    await this.loadSuper();
+                    this.showSuccess('已强制暂停「' + (shop.name || shop.id) + '」营业');
+                } catch (e) {
+                    this.showError(e.message || '操作失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async loadOrders() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.orderPage);
+                    params.set('size', this.size);
+                    Object.entries(this.orderQuery).forEach(([k, v]) => {
+                        if (v) params.set(k, v);
+                    });
+                    const result = await get('/api/admin/orders?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.adminOrders = data.records || [];
+                    this.orderTotal = Number(data.total) || 0;
+                    this.orderPages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载订单失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            searchOrders() {
+                this.orderPage = 1;
+                this.loadOrders();
+            },
+            /** 监管留痕凭证：按当前筛选条件导出 CSV（服务端 BOM+转义）。
+             *  整页跳转读不到响应头，改 fetch+Blob，
+             *  超上限时读 X-Export-Truncated 并在页内 notice 明确提示数据被截断 */
+            async exportOrders() {
+                const q = this.orderQuery;
+                const params = new URLSearchParams();
+                if (q.orderNo) params.set('orderNo', q.orderNo);
+                if (q.username) params.set('username', q.username);
+                if (q.shopName) params.set('shopName', q.shopName);
+                if (q.startDate) params.set('startDate', q.startDate);
+                if (q.endDate) params.set('endDate', q.endDate);
+                if (q.orderStatus) params.set('orderStatus', q.orderStatus);
+                const qs = params.toString();
+                let res;
+                try {
+                    res = await fetch(CTX + '/api/admin/orders/export' + (qs ? '?' + qs : ''));
+                } catch (e) {
+                    this.showError('导出失败：无法连接服务器');
+                    return;
+                }
+                if (!res.ok) {
+                    this.showError('导出失败，请稍后重试');
+                    return;
+                }
+                const truncated = res.headers.get('X-Export-Truncated') === '1';
+                const rows = res.headers.get('X-Export-Rows') || '';
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'admin-orders.csv';
+                a.click();
+                URL.revokeObjectURL(a.href);
+                if (truncated) {
+                    this.showError('导出已达行数上限（本次 ' + rows + ' 行），数据不完整，请缩小筛选范围后重新导出');
+                } else {
+                    this.showSuccess('导出完成，共 ' + rows + ' 行');
+                }
+            },
+            refundText(status) { return label(REFUND_STATUS_TEXT, status); },
+            async loadRefunds() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const result = await get('/api/admin/refunds?page=' + this.refundPage + '&size=' + this.size);
+                    const data = (result && result.data) || {};
+                    this.refunds = data.records || [];
+                    this.refundTotal = Number(data.total) || 0;
+                    this.refundPages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载仲裁列表失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            turnRefunds(page) {
+                this.refundPage = page;
+                this.loadRefunds();
+            },
+            applyStatsQuick(days) {
+                const range = quickRange(days);
+                if (!range) return;
+                this.statsQuick = days;
+                this.statsStart = range.start;
+                this.statsEnd = range.end;
+                this.loadStats();
+            },
+            applyOrderQuick(days) {
+                const range = quickRange(days);
+                if (!range) return;
+                this.orderQuick = days;
+                this.orderQuery.startDate = range.start;
+                this.orderQuery.endDate = range.end;
+                this.searchOrders();
+            },
+            resetStatusText(status) {
+                return { PENDING: '待处理', CODE_ISSUED: '已发码', REJECTED: '已作废', EXPIRED: '已过期' }[status] || status;
+            },
+            async loadResets() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const result = await get('/api/admin/reset-requests');
+                    this.resetRequests = (result && result.data) || [];
+                } catch (e) {
+                    this.showError(e.message || '加载找回申请失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async decideReset(row, agree) {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const result = await post('/api/admin/reset-decide', { requestId: row.id, agree });
+                    this.showSuccess((result && result.msg) || '处理成功');
+                    await this.loadResets();
+                } catch (e) {
+                    this.showError(e.message || '处理失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            openAgree(row, agree) {
+                this.agree = { refundId: row.refundId, orderNo: row.orderNo, payAmount: row.payAmount, adminRemark: '', mode: agree !== false };
+            },
+            async confirmAgree() {
+                if (!this.agree.mode && !this.agree.adminRemark) {
+                    this.showError('驳回退款必须填写裁定理由');
+                    return;
+                }
+                this.loading = true;
+                try {
+                    await post('/api/admin/refund-decide', {
+                        refundId: this.agree.refundId,
+                        agree: this.agree.mode,
+                        adminRemark: this.agree.adminRemark
+                    });
+                    const agreed = this.agree.mode;
+                    this.agree = { refundId: null, orderNo: '', payAmount: null, adminRemark: '', mode: true };
+                    await this.loadRefunds();
+                    this.showSuccess(agreed ? '平台已裁定同意退款' : '平台已裁定驳回退款');
+                } catch (e) {
+                    this.showError(e.message || '裁定失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            turnOrders(page) {
+                this.orderPage = page;
+                this.loadOrders();
+            },
+            rankUnit() {
+                return this.rankMode.indexOf('Amount') >= 0 ? '口径：已支付订单交易额' : '口径：已支付订单销量件数';
+            },
+            rankValue(r) {
+                return this.rankMode.indexOf('Amount') >= 0 ? '¥' + Number(r.sales).toFixed(2) : r.sales + ' 件';
+            },
+            /** 图表标题：随四口径切换 */
+            rankTitle() {
+                const titles = {
+                    shopAmountRank: '店铺交易额 TOP5（元）',
+                    shopQuantityRank: '店铺销量 TOP5（件）',
+                    dishQuantityRank: '菜品销量 TOP5（件）',
+                    dishAmountRank: '菜品交易额 TOP5（元）'
+                };
+                return titles[this.rankMode] || '销量排行';
+            },
+            /** 图表文字色跟随亮/暗主题（ECharts 不读 CSS 变量，此处与主题色卡对齐） */
+            chartTextColor() {
+                return this.dark ? '#9fb0c7' : '#4b5a70';
+            },
+            /** 取已有实例或新建，避免重复 init 报 “chart instance already initialized” */
+            chartOf(el) {
+                if (!el || typeof echarts === 'undefined') return null;
+                return echarts.getInstanceByDom(el) || echarts.init(el);
+            },
+            renderCharts() {
+                this.renderRankChart();
+                this.renderPieChart();
+            },
+            renderRankChart() {
+                const chart = this.chartOf(this.$refs.rankChart);
+                if (!chart) return;
+                const rows = this.ranks[this.rankMode] || [];
+                if (!rows.length) { chart.clear(); return; }
+                const isAmount = this.rankMode.indexOf('Amount') >= 0;
+                const color = this.chartTextColor();
+                chart.setOption({
+                    title: { text: this.rankTitle(), left: 'center', textStyle: { fontSize: 13, color: color } },
+                    tooltip: { trigger: 'axis' },
+                    grid: { left: 56, right: 20, top: 40, bottom: 40 },
+                    xAxis: {
+                        type: 'category',
+                        data: rows.map(r => r.name),
+                        axisLabel: { interval: 0, fontSize: 11, color: color }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        minInterval: isAmount ? null : 1,
+                        axisLabel: { color: color }
+                    },
+                    series: [{
+                        type: 'bar',
+                        barMaxWidth: 42,
+                        data: rows.map(r => Number(r.sales)),
+                        itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] }
+                    }]
+                }, true);
+            },
+            renderPieChart() {
+                const chart = this.chartOf(this.$refs.pieChart);
+                if (!chart) return;
+                const rows = this.ranks.shopAmountRank || [];
+                if (!rows.length) { chart.clear(); return; }
+                const color = this.chartTextColor();
+                chart.setOption({
+                    title: { text: '店铺交易额占比 TOP5', left: 'center', textStyle: { fontSize: 13, color: color } },
+                    tooltip: { trigger: 'item', formatter: '{b}：¥{c}（{d}%）' },
+                    legend: { bottom: 0, textStyle: { fontSize: 11, color: color } },
+                    series: [{
+                        type: 'pie',
+                        radius: ['40%', '62%'],
+                        center: ['50%', '50%'],
+                        data: rows.map(r => ({ name: r.name, value: Number(r.sales) })),
+                        label: { fontSize: 11, color: color }
+                    }]
+                }, true);
+            },
+            async loadStats() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const qs = (this.statsStart ? 'startDate=' + this.statsStart : '')
+                        + (this.statsStart && this.statsEnd ? '&' : '')
+                        + (this.statsEnd ? 'endDate=' + this.statsEnd : '');
+                    const suffix = qs ? '?' + qs : '';
+                    const overview = await get('/api/admin/stats/overview' + suffix);
+                    this.stats = (overview && overview.data) || { orderCount: 0, totalAmount: 0 };
+                    const ranking = await get('/api/admin/stats/ranking' + suffix);
+                    const data = (ranking && ranking.data) || {};
+                    this.ranks = {
+                        shopAmountRank: data.shopAmountRank || [],
+                        shopQuantityRank: data.shopQuantityRank || [],
+                        dishQuantityRank: data.dishQuantityRank || [],
+                        dishAmountRank: data.dishAmountRank || []
+                    };
+                    if (this.statsStart && this.statsEnd) {
+                        const pr = this.prevRange();
+                        const prev = await get('/api/admin/stats/overview?startDate=' + pr.start + '&endDate=' + pr.end);
+                        this.prevStats = (prev && prev.data) || null;
+                    } else {
+                        this.prevStats = null;
+                    }
+                    this.$nextTick(() => this.renderCharts());
+                } catch (e) {
+                    this.showError(e.message || '加载统计失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            /** 等长上一周期：区间天数不变，整体前移 */
+            prevRange() {
+                const toDay = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+                const fmt = dt => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+                const start = toDay(this.statsStart);
+                const end = toDay(this.statsEnd);
+                const days = Math.round((end - start) / 86400000) + 1;
+                const prevEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1);
+                const prevStart = new Date(prevEnd.getFullYear(), prevEnd.getMonth(), prevEnd.getDate() - (days - 1));
+                return { start: fmt(prevStart), end: fmt(prevEnd) };
+            },
+            /** 环比展示文本：无区间或无上期数据返回空串（模板据此隐藏） */
+            deltaText(field) {
+                if (!this.prevStats) return '';
+                const cur = Number(this.stats[field]) || 0;
+                const prev = Number(this.prevStats[field]) || 0;
+                if (prev === 0) return cur > 0 ? '↑ 新增' : '持平';
+                const pct = ((cur - prev) / prev) * 100;
+                const arrow = pct > 0 ? '↑' : (pct < 0 ? '↓' : '');
+                return arrow + ' ' + Math.abs(pct).toFixed(1) + '%';
+            }
+        },
+        watch: {
+            // 口径切换只重画柱状图；主题切换时两图文字色需重算
+            rankMode() { this.$nextTick(() => this.renderRankChart()); },
+            dark() { this.$nextTick(() => this.renderCharts()); }
+        },
+        async mounted() {
+            const user = await requireRole('ADMIN');
+            if (!user) return;
+            this.user = user;
+            this.loadTodo(user.role);
+            const tabParam = new URLSearchParams(location.search).get('tab');
+            const valid = ['audit', 'users', 'shops', 'orders', 'refunds', 'resets', 'stats'];
+            this.switchTab(valid.includes(tabParam) ? tabParam : 'audit');
+        }
+    });
+    installShell(app);
+    app.use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

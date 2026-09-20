@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_4_0.xsd"
+         version="4.0">
+    <session-config>
+        <session-timeout>30</session-timeout>
+        <!-- 显式声明 Session Cookie 属性（评审 P1-4）；SameSite 由 META-INF/context.xml 的 CookieProcessor 补充 -->
+        <cookie-config>
+            <http-only>true</http-only>
+        </cookie-config>
+    </session-config>
+    <!-- Tomcat 9.0.31 默认无 .mjs MIME 映射，module script 严格校验 MIME 会加载失败；显式映射为 text/javascript -->
+    <mime-mapping>
+        <extension>mjs</extension>
+        <mime-type>text/javascript</mime-type>
+    </mime-mapping>
+    <!-- 404/500/未捕获异常统一回落静态友好错误页（不再暴露 Tomcat 默认错误页与容器版本）；
+         2026-09-13 移入 pages/ 下：PageAuthFilter 默认仅拦截 REQUEST 分发，容器 error-page 走 ERROR 分发
+         不受其登录守卫影响；页内资源按上下文绝对路径注入，不受原始请求深度影响 -->
+    <error-page>
+        <error-code>404</error-code>
+        <location>/pages/error.html</location>
+    </error-page>
+    <error-page>
+        <error-code>500</error-code>
+        <location>/pages/error.html</location>
+    </error-page>
+    <error-page>
+        <exception-type>java.lang.Throwable</exception-type>
+        <location>/pages/error.html</location>
+    </error-page>
+    <welcome-file-list>
+        <welcome-file>pages/login.html</welcome-file>
+    </welcome-file-list>
+</web-app>

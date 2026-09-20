@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人中心 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body class="page-account">
+<div id="app" v-cloak class="shell admin-layout">
+    <app-sidenav v-if="isManage" :user="user" active-href="account.html" brand="账户中心" logo="账"></app-sidenav>
+    <div class="admin-main">
+    <app-topbar :user="user" active-href="account.html" :show-brand="!isManage"
+                :brand="isManage ? '账户中心' : '外卖配送平台'" :show-nav="!isManage" logo="送" :brand-href="brandHome"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">账</div>
+                <h1>个人中心</h1>
+                <p>个人信息查看 · 手机号与密码修改（点击按钮展开）</p>
+            </div>
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div v-if="user" class="field">
+                <label>个人信息</label>
+                <div class="tip">
+                    用户名：{{ user.username }}　角色：{{ label(ROLE_TEXT, user.role) }}　
+                    状态：{{ label(USER_STATUS_TEXT, user.status) }}　
+                    手机号：{{ user.phone || '未设置' }}　
+                    注册时间：{{ user.createdAt || '-' }}
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <span class="tip">点击按钮展开对应修改表单</span>
+                <button class="btn" type="button" @click="showPhoneForm = !showPhoneForm" :disabled="loading">修改手机号</button>
+                <button class="btn" type="button" @click="showPwdForm = !showPwdForm" :disabled="loading">修改密码</button>
+            </div>
+
+            <form v-if="showPhoneForm" novalidate @submit.prevent="handleChangePhone" class="panel">
+                <div class="panel-header">
+                    <strong>修改手机号</strong>
+                    <button class="btn" type="button" @click="showPhoneForm = false" :disabled="loading">关闭</button>
+                </div>
+                <div class="field">
+                    <label for="acc-phone">新手机号</label>
+                    <input id="acc-phone"
+                           v-model.trim="phoneForm.phone"
+                           type="tel"
+                           maxlength="11"
+                           autocomplete="tel"
+                           placeholder="请输入 11 位新手机号">
+                </div>
+                <div class="form-actions">
+                    <button class="btn primary" type="submit" :disabled="loading">
+                        {{ loading ? '提交中…' : '保存手机号' }}
+                    </button>
+                </div>
+            </form>
+
+            <form v-if="showPwdForm" novalidate @submit.prevent="handleChangePwd" class="panel">
+                <div class="panel-header">
+                    <strong>修改密码</strong>
+                    <button class="btn" type="button" @click="showPwdForm = false" :disabled="loading">关闭</button>
+                </div>
+                <div class="field">
+                    <label for="acc-username">用户名</label>
+                    <input id="acc-username"
+                           type="text"
+                           :value="user ? user.username : ''"
+                           readonly
+                           autocomplete="username">
+                </div>
+                <div class="field">
+                    <label for="acc-old">旧密码</label>
+                    <input id="acc-old"
+                           v-model="pwdForm.oldPassword"
+                           type="password"
+                           maxlength="100"
+                           autocomplete="current-password"
+                           placeholder="请输入当前密码">
+                </div>
+                <div class="field">
+                    <label for="acc-new">新密码</label>
+                    <input id="acc-new"
+                           v-model="pwdForm.password"
+                           type="password"
+                           maxlength="100"
+                           autocomplete="new-password"
+                           placeholder="至少 6 位">
+                </div>
+                <div class="field">
+                    <label for="acc-confirm">确认新密码</label>
+                    <input id="acc-confirm"
+                           v-model="pwdForm.confirmPassword"
+                           type="password"
+                           maxlength="100"
+                           autocomplete="new-password"
+                           placeholder="再次输入新密码">
+                </div>
+                <p class="tip">修改成功后当前登录失效，需使用新密码重新登录。</p>
+                <div class="form-actions">
+                    <button class="btn primary" type="submit" :disabled="loading">
+                        {{ loading ? '提交中…' : '修改密码' }}
+                    </button>
+                </div>
+            </form>
+        </section>
+    </main>
+    <div class="footer">DeliveryWeb</div>
+    </div>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { post, requireRole, goHome, HOME_PAGES, ROLE_TEXT, USER_STATUS_TEXT, label, CTX, installShell } from '../common/common.js';
+
+    const PHONE_RE = /^\d{11}$/;
+
+    const app = createApp({
+        data() {
+            return {
+                user: null,
+                loading: false,
+                notice: '',
+                noticeType: 'error',
+                phoneForm: { phone: '' },
+                pwdForm: { oldPassword: '', password: '', confirmPassword: '' },
+                showPhoneForm: false,
+                showPwdForm: false,
+                ROLE_TEXT,
+                USER_STATUS_TEXT
+            };
+        },
+        computed: {
+            brandHome() {
+                return (this.user && HOME_PAGES[this.user.role]) || 'shops.html';
+            },
+            isManage() {
+                return !!this.user && (this.user.role === 'ADMIN' || this.user.role === 'SHOP');
+            }
+        },
+        methods: {
+            label,
+            clearNotice() {
+                this.notice = '';
+                this.noticeType = 'error';
+            },
+            showError(message) {
+                this.noticeType = 'error';
+                this.notice = message;
+            },
+            showSuccess(message) {
+                this.noticeType = 'success';
+                this.notice = message;
+            },
+
+            async handleChangePhone() {
+                this.clearNotice();
+                const phone = this.phoneForm.phone.trim();
+                if (!PHONE_RE.test(phone)) {
+                    this.showError('请输入11位手机号');
+                    return;
+                }
+                this.loading = true;
+                try {
+                    const result = await post('/api/auth/update-profile', { phone });
+                    this.user = Object.assign({}, this.user, result.data);
+                    this.showSuccess('手机号修改成功');
+                } catch (e) {
+                    this.showError(e.message || '修改失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async handleChangePwd() {
+                this.clearNotice();
+                const f = this.pwdForm;
+                if (!f.oldPassword) {
+                    this.showError('请输入旧密码');
+                    return;
+                }
+                if (!f.password || f.password.length < 6) {
+                    this.showError('密码长度不能少于 6 位');
+                    return;
+                }
+                if (f.password !== f.confirmPassword) {
+                    this.showError('两次输入的密码不一致');
+                    return;
+                }
+                this.loading = true;
+                try {
+                    await post('/api/auth/change-password', {
+                        oldPassword: f.oldPassword,
+                        newPassword: f.password
+                    });
+                    this.showSuccess('密码修改成功，正在返回登录页…');
+                    setTimeout(() => {
+                        location.href = CTX + '/pages/login.html';
+                    }, 800);
+                } catch (e) {
+                    this.showError(e.message || '修改失败');
+                    this.loading = false;
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole();
+            if (user) {
+                this.user = user;
+                this.phoneForm.phone = user.phone || '';
+            }
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,2121 @@
+/* =====================================================================
+   DeliveryWeb 全局统一样式表
+   设计规范（全部页面统一引用本文件，页面内不再编写 <style> 块）：
+   - 主色：现代蓝 #2563eb（渐变辅助色 #3b82f6），页面底色 #eef2f7
+   - 暗色主题：深灰系（背景 #0f172a / 卡片 #1e293b / 组件面 #243044），
+     经 <html data-theme="dark"> 切换，localStorage DW_THEME 记忆，
+     切换入口为顶栏用户区圆形图标按钮与登录品牌面板右上角
+   - 卡片：亮色白底、暗色 #1e293b，12px 圆角、浅描边与柔和阴影
+   - 控件：输入框/按钮 7~10px 圆角，聚焦与悬停有过渡反馈
+   - 布局：管理端（admin / 商家系 / account 与 order-detail 的 ADMIN、SHOP
+     角色）侧边栏 + 顶栏；C 端（顾客/骑手）仅顶栏；移动端隐侧边栏、顶栏换行
+   - 高度：顶栏与侧边栏 brand 行统一 56px；顶栏内容通栏不居中、左右 padding 恒 24px
+   - 覆盖约定：新覆盖一律置于文件尾，或用组合选择器提权（如 .card.auth-card），
+     避免同特异性覆盖错乱
+   ===================================================================== */
+
+/* ---------- 设计变量 ---------- */
+:root {
+    --color-primary: #2563eb;
+    --color-primary-light: #3b82f6;
+    --color-bg: #eef2f7;
+    --color-card: #ffffff;
+    --color-border: #d5dce6;
+    --color-border-light: #e5eaf1;
+    --color-text: #262626;
+    --color-text-title: #1f1f1f;
+    --color-text-sub: #4b5a70;
+    --color-text-muted: #8c8c8c;
+    --color-error: #ff4d4f;
+    --color-error-bg: #fff2f0;
+    --color-error-border: #ffccc7;
+    --color-success: #16a34a;
+    --color-success-bg: #f6ffed;
+    --color-success-border: #b7eb8f;
+    --radius-card: 12px;
+    --radius-control: 7px;
+    --shadow-card: 0 10px 30px rgba(0, 21, 41, 0.08);
+    /* 顶栏/侧边栏深色（dashboard 范式） */
+    --topbar-bg: #1e293b;
+    --topbar-border: #334155;
+    --topbar-text: #b9cdd2;
+    --topbar-text-active: #fff;
+    --topbar-active-bg: #2563eb;
+    --side-bg: #1e293b;
+    --side-text: #b9cdd2;
+    --side-active: #fff;
+    --side-hover: #334155;
+}
+
+/* ---------- 基础重置 ---------- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* 首屏 loading 占位：Vue mount 前（v-cloak 期间）隐藏未编译模板并显示全屏“加载中”，
+   mount 后 v-cloak 属性移除、占位自动消失，掩盖文档加载白屏（纯 CSS，无需改各页 HTML/JS） */
+[v-cloak] {
+    position: relative;
+}
+
+[v-cloak] > * {
+    display: none;
+}
+
+[v-cloak]::before {
+    content: "加载中…";
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg, #f5f7fa);
+    color: #909399;
+    font-size: 14px;
+    letter-spacing: 2px;
+    z-index: 9999;
+}
+
+body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+}
+
+/* 表单控件默认不继承父级字体（UA 样式表会为 button/input/select 指定系统字体），
+   统一为页面字体栈，避免同为 .btn 的链接与按钮呈现不同字形 */
+button, input, select, textarea {
+    font-family: inherit;
+}
+
+html {
+    min-height: 100%;
+    background: var(--color-bg);
+}
+
+/* 应用根容器：顶部导航 + 内容区纵列，内容区不足一屏时自动填充并居中 */
+#app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---------- 管理端 dashboard 布局：侧边栏 + 主区（Element Plus el-menu） ---------- */
+/* id 特异性高于 class：必须用 #app.admin-layout 才能覆盖 #app 的 flex-direction:column */
+#app.admin-layout {
+    flex-direction: row;
+}
+
+.admin-side {
+    flex: none;
+    width: 208px;
+    background: var(--side-bg);
+    border-right: 1px solid var(--side-hover);
+    display: flex;
+    flex-direction: column;
+}
+
+.admin-side-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* 与管理区顶栏同高（56px），避免切换页面后横线错位 */
+    height: 56px;
+    padding: 0 16px;
+    box-sizing: border-box;
+    font-weight: 700;
+    color: var(--side-active);
+    border-bottom: 1px solid var(--side-hover);
+}
+
+/* 普通 nav 版侧边栏导航（管理端/商家系/通用页条件侧边栏统一范式，不依赖 Element Plus） */
+.admin-side-nav {
+    flex: 1;
+    padding: 8px 0;
+}
+
+.admin-side-nav a {
+    display: block;
+    padding: 12px 20px;
+    color: var(--side-text);
+    text-decoration: none;
+    font-size: 14px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.admin-side-nav a:hover {
+    background: var(--side-hover);
+    color: var(--side-active);
+}
+
+.admin-side-nav a.active {
+    background: var(--topbar-active-bg);
+    color: #fff;
+}
+
+.admin-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ECharts 热销排行图表容器 */
+.rank-chart {
+    width: 100%;
+    height: 260px;
+    margin: 12px 0;
+}
+
+/* ---------- 顶部导航（登录态页面共用，登录页除外） ---------- */
+.topbar {
+    flex: none;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.94);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.topbar-inner {
+    max-width: 1112px;
+    margin: 0 auto;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+
+.topbar-logo {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+}
+
+.topbar-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text-title);
+}
+
+.topbar-nav {
+    display: flex;
+    gap: 4px;
+    margin-left: 6px;
+}
+
+.topbar-nav a {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-sub);
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.topbar-nav a:hover {
+    background: #eef2f7;
+    color: var(--color-primary);
+}
+
+.topbar-nav a.active {
+    background: #e0eaff;
+    color: var(--color-primary);
+}
+
+.topbar-user {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.topbar-name {
+    font-size: 13px;
+    color: var(--color-text-sub);
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topbar-user .btn {
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+/* ---------- 页面布局 ---------- */
+.page {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 16px 40px;
+    /* 背景图资产已移除（现代登录页分栏卡片无展示点，视觉刷新块 .page 亦为透明底） */
+    background: var(--color-bg);
+}
+
+.card {
+    width: min(100%, 1080px);
+    background: var(--color-card);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 28px 28px 24px;
+}
+
+/* ---------- 应用壳模式（登录态页面）：卡片与顶栏无缝连接、外框固定、内容内部滚动 ---------- */
+/* 锁定视口高度：页面自身不滚动，切换 tab/展开表单时卡片尺寸不变 */
+.shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+/* 内容区顶到底撑满：卡片上沿直接接顶栏下沿，消除悬空间隙 */
+.shell .page {
+    align-items: stretch;
+    padding: 0 16px;
+    /* 解除 flex 子项最小高度限制：内容超高时压缩本区而非撑破外壳 */
+    min-height: 0;
+}
+
+.shell .card {
+    height: 100%;
+    overflow-y: auto;
+    /* 预留滚动条留白：展开/收起详情时内容宽度恒定，避免经典滚动条突然占宽挤压表格列 */
+    scrollbar-gutter: stable;
+    /* 纵列 flex：使页脚可用 margin-top:auto 推至卡片底边 */
+    display: flex;
+    flex-direction: column;
+    /* 底部留白交由页脚自身 padding 承担，保证页脚贴齐卡片下沿 */
+    padding-bottom: 0;
+    border-top: 0;
+    border-bottom: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* 纵列 flex 仅服务于页脚推底：子项一律保持自然高度不收缩，
+   溢出统一交给卡片整体滚动，避免 .table-wrap（overflow-x:auto 计算后纵向亦为 auto）
+   这类滚动容器被 flex 压缩后长出内部纵向滚动条 */
+.shell .card > * {
+    flex: none;
+}
+
+/* 细滚动条（Chrome/Edge/Firefox）：收窄预留留白宽度，暖橙配色与主题一致；轨道透明视觉无感 */
+.shell .card,
+.auth-body {
+    scrollbar-width: thin;
+    scrollbar-color: #b9c8e8 transparent;
+}
+
+.shell .card::-webkit-scrollbar,
+.auth-body::-webkit-scrollbar {
+    width: 10px;
+}
+
+.shell .card::-webkit-scrollbar-thumb,
+.auth-body::-webkit-scrollbar-thumb {
+    background: #b9c8e8;
+    border-radius: 8px;
+}
+
+.shell .card::-webkit-scrollbar-track,
+.auth-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ---------- 登录页：现代左右分栏卡片（左品牌面板 + 右表单区） ---------- */
+
+/* 外框：双栏、高度锁定，切换登录/注册页签时卡片大小不变 */
+.auth-card {
+    width: min(100%, 880px);
+    height: min(600px, calc(100vh - 84px));
+    height: min(600px, calc(100dvh - 84px));
+    display: flex;
+    flex-direction: row;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 16px;
+}
+
+/* 左品牌面板：主题色渐变 + 装饰光斑 */
+.auth-aside {
+    flex: none;
+    width: 340px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    padding: 40px 34px;
+    background: linear-gradient(160deg, var(--color-primary), var(--side-bg));
+    color: #fff;
+}
+
+.auth-aside::before,
+.auth-aside::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-aside::before {
+    width: 220px;
+    height: 220px;
+    top: -70px;
+    right: -70px;
+}
+
+.auth-aside::after {
+    width: 160px;
+    height: 160px;
+    bottom: -50px;
+    left: -40px;
+}
+
+.auth-aside-inner {
+    position: relative;
+    z-index: 1;
+}
+
+.auth-aside .logo {
+    width: 56px;
+    height: 56px;
+    margin: 0 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: #fff;
+    color: var(--color-primary);
+    font-size: 22px;
+    font-weight: 700;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.auth-aside h1 {
+    font-size: 21px;
+    line-height: 1.5;
+    color: #fff;
+}
+
+.auth-aside p {
+    margin-top: 8px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.auth-feats {
+    margin: 22px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.auth-feats li {
+    padding: 7px 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.88);
+}
+
+/* 右表单区 */
+.auth-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 34px 40px 20px;
+}
+
+/* 表单滚动区：吸收登录/注册表单的高度差，保持卡片外框不变 */
+.auth-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* 与壳卡片同策：预留滚动条留白，切换登录/注册时表单不横向位移 */
+    scrollbar-gutter: stable;
+}
+
+/* 移动端：隐藏品牌面板，保留单列表单 */
+@media (max-width: 767px) {
+    .auth-aside {
+        display: none;
+    }
+
+    .auth-main {
+        padding: 26px 22px 16px;
+    }
+}
+
+/* ---------- 品牌区（登录注册页） ---------- */
+.brand {
+    text-align: center;
+    margin-bottom: 22px;
+}
+
+.brand .logo {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-card);
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    color: #fff;
+    font-size: 28px;
+    font-weight: 700;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28);
+}
+
+.brand h1 {
+    font-size: 19px;
+    color: var(--color-text-title);
+    line-height: 1.4;
+}
+
+.brand p {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--color-text-sub);
+    letter-spacing: 2px;
+}
+
+/* 返回按钮（P03）：窄屏置于品牌区右上方；桌面端与店铺名称同行右对齐，与加购按钮同垂直列 */
+.brand .back-btn {
+    display: block;
+    margin: 0 0 10px auto;
+}
+
+@media (min-width: 768px) {
+    .brand .back-btn {
+        order: 9;
+        margin: 0 0 0 auto;
+    }
+}
+
+/* ---------- 页签切换 ---------- */
+.tabs {
+    display: flex;
+    background: #eef2f7;
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 22px;
+}
+
+.tabs button {
+    flex: 1;
+    height: 38px;
+    border: none;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-text-sub);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tabs button.active {
+    background: #fff;
+    color: var(--color-primary);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.16);
+}
+
+/* ---------- 操作结果提示条 ---------- */
+.notice {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: var(--radius-control);
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.notice.error {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    border: 1px solid var(--color-error-border);
+}
+
+.notice.success {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+    border: 1px solid var(--color-success-border);
+}
+
+/* ---------- 表单 ---------- */
+.field {
+    margin-bottom: 15px;
+}
+
+.field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+    color: #555;
+}
+
+.field input,
+.field select,
+.field textarea {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-size: 15px;
+    background: #f5f7fa;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.field textarea {
+    height: auto;
+    min-height: 84px;
+    padding: 10px 12px;
+    resize: none;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    background: #fff;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.tip {
+    margin: -4px 0 14px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+}
+
+/* ---------- 角色选择卡片（注册页） ---------- */
+.roles {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.role-card {
+    flex: 1;
+    text-align: center;
+    padding: 12px 8px;
+    border: 1.5px solid var(--color-border);
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.role-card .role-icon {
+    display: block;
+    font-size: 24px;
+    margin-bottom: 4px;
+}
+
+.role-card strong {
+    display: block;
+    font-size: 15px;
+    color: #444;
+}
+
+.role-card small {
+    display: block;
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.role-card.active {
+    border-color: var(--color-primary);
+    background: #eef4ff;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+
+.role-card.active strong {
+    color: var(--color-primary);
+}
+
+/* ---------- 按钮 ---------- */
+.submit {
+    width: 100%;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+    transition: transform 0.15s, box-shadow 0.2s;
+}
+
+.submit:hover {
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.35);
+    transform: translateY(-1px);
+}
+
+.submit:active {
+    transform: translateY(0);
+}
+
+.submit:disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* 文字链接按钮（忘记密码/返回登录等次级操作，右对齐） */
+.link-btn {
+    display: block;
+    margin: -2px 0 14px auto;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.link-btn:hover {
+    text-decoration: underline;
+}
+
+/* 通用小按钮（列表行内操作，后续页面复用）；同时用于 <a> 与 <button>，需显式去掉链接下划线 */
+.btn {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-control);
+    background: #fff;
+    color: var(--color-primary);
+    font-size: 13px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    background: #eef4ff;
+}
+
+.btn.primary {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    color: #fff;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 危险操作按钮（删除/清空等不可逆动作）：红底白字加粗，保证醒目 */
+.btn.danger {
+    background: var(--color-error);
+    border-color: var(--color-error);
+    color: #fff;
+    font-weight: 700;
+}
+
+.btn.danger:hover {
+    background: #c9302c;
+    border-color: #c9302c;
+}
+
+/* 图标按钮（购物车行 −/+/✕）：固定方形，消除字形宽度差异导致的尺寸不齐 */
+.btn.icon {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+/* ---------- 表单/列表通用组合（消除页面内联 style） ---------- */
+/* 表单底部按钮行：主按钮撑满，次按钮常规宽 */
+.form-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.form-actions .submit {
+    flex: 1;
+}
+
+/* 列表行内按钮组（编辑/删除/设默认等），右对齐并允许换行 */
+.row-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+/* 数量输入框（购物车行 −/+ 之间）：与图标按钮同高，隐藏数字微调按钮 */
+.qty-input {
+    width: 52px;
+    height: 36px;
+    padding: 0 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.qty-input:focus {
+    border-color: var(--color-primary-light);
+}
+
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* 地址选择卡片（P04）：整卡可点，单选框自适应宽高 */
+.address-option {
+    cursor: pointer;
+}
+
+.address-option input[type="radio"] {
+    width: auto;
+    height: auto;
+    margin: 0;
+    flex: none;
+}
+
+/* 复选框字段：与文本输入区分，宽高由内容决定 */
+.checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.checkbox-field input[type="checkbox"] {
+    width: auto;
+    height: auto;
+    margin: 0;
+}
+
+/* 价格强调色 */
+.price {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+/* 品牌区普通描述段落：抵消 .brand p 的字间距 */
+.brand-desc {
+    letter-spacing: 0;
+}
+
+/* 内联表单面板头部：标题 + 关闭按钮，两端对齐 */
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+/* .tip 在 toolbar/table 内自动去除默认外边距，避免额外内联样式 */
+.toolbar .tip,
+.table .tip {
+    margin: 0;
+}
+
+/* ---------- 状态徽章（订单/审核/配送状态展示，后续页面复用） ---------- */
+.badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    background: #fdf1e7;
+    color: var(--color-text-sub);
+    /* 徽章禁止换行：避免“已 支 付”逐字竖排 */
+    white-space: nowrap;
+}
+
+.badge.success {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+}
+
+.badge.error {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+}
+
+/* ---------- 数据表格（商家/管理员 PC 端页面复用） ---------- */
+/* 表格外层滚动容器：窄屏时横向滚动而不撑破卡片 */
+.table-wrap {
+    overflow-x: auto;
+}
+
+.table-wrap .table {
+    min-width: 720px;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.table th,
+.table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--color-border-light);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.table th {
+    background: #fdf1e7;
+    color: var(--color-text-sub);
+    font-weight: 600;
+    /* 表头禁止换行：避免窄列下“实付金 额”式逐字竖排 */
+    white-space: nowrap;
+}
+
+/* 表格内按钮紧凑化：缓解操作列拥挤 */
+.table .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* 表格操作列：给下限宽，避免允许换行后塌成单列（详情页+详情 占一行，接单+拒单 占次行） */
+.table td:last-child .row-actions { min-width: 118px; }
+
+/* 展开详情行（主从表格 P09）：浅色底区分数据行，内嵌面板去多余外边距 */
+.detail-row > td {
+    background: #fffdf8;
+}
+
+.detail-row .panel {
+    margin-bottom: 0;
+}
+
+/* 卡片列表内联详情面板（P11）：外边距归零，间距统一由 item-list 的 gap 控制 */
+.item-list .panel {
+    margin-bottom: 0;
+}
+
+/* 订单详情摘要横向排列，避免标签和值逐字竖排 */
+.detail-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    align-items: center;
+    margin-bottom: 12px;
+    color: var(--color-text-sub);
+}
+.detail-summary > div { display: flex; align-items: baseline; gap: 6px; }
+.detail-label { color: var(--color-text-sub); font-weight: 600; white-space: nowrap; }
+.detail-summary-footer { margin: 12px 0 0; }
+
+/* 日期单元格单行（P09 下单时间）：列宽按内容自适应，避免 2026-09-/08 式断行 */
+.cell-date {
+    white-space: nowrap;
+}
+
+/* 单行省略单元格（P12 长文本列）：超宽内容截断加省略号，title 悬停看全文 */
+.cell-clip {
+    display: inline-block;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+/* KPI 统计卡片已迁移至 Element Plus el-statistic/el-card，原 .stat-cards/.stat-card 移除 */
+
+/* ---------- 桌面端工作区 ---------- */
+@media (min-width: 768px) {
+    .page {
+        padding: 32px 24px 48px;
+    }
+
+    .shell .page {
+        padding: 0 24px;
+    }
+
+    .card {
+        padding: 32px 40px 28px;
+    }
+
+    .brand {
+        text-align: left;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 26px;
+    }
+
+    .brand .logo {
+        width: 48px;
+        height: 48px;
+        margin: 0;
+        border-radius: 10px;
+        font-size: 24px;
+    }
+
+    .brand h1 { font-size: 22px; }
+    .brand p { margin-top: 3px; letter-spacing: 1px; }
+
+    .toolbar {
+        flex-wrap: nowrap;
+        gap: 12px;
+        padding: 14px;
+        margin: 0 -4px 18px;
+        background: #fffaf5;
+        border: 1px solid var(--color-border-light);
+        border-radius: 10px;
+    }
+
+    .toolbar input { min-width: 260px; }
+    .toolbar select { min-width: 140px; }
+    .toolbar .btn { flex: none; }
+
+    .item-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .item-card { min-width: 0; padding: 16px; }
+
+    .table-wrap .table { min-width: 900px; }
+    .table th, .table td { padding: 12px 20px; }
+
+    .footer { margin-top: 24px; }
+}
+
+/* .static-text 已无页面引用，移除 */
+
+/* ---------- 工具栏（搜索/筛选行，列表页复用） ---------- */
+.toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.toolbar input,
+.toolbar select {
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    font-size: 14px;
+    background: #fff;
+    outline: none;
+}
+
+.toolbar input {
+    flex: 1;
+    min-width: 160px;
+}
+
+.toolbar input:focus,
+.toolbar select:focus {
+    border-color: var(--color-primary-light);
+}
+
+/* 拒绝原因输入（P12 表格下方内联） */
+.notice input {
+    height: 32px;
+    padding: 0 10px;
+    margin: 0 8px;
+    border: 1px solid var(--color-error-border);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.notice input:focus {
+    border-color: var(--color-error);
+}
+
+/* 拒绝原因等长文本（P12 等）多行框：禁止拖动，宽度占满 */
+.notice textarea {
+    width: 100%;
+    min-height: 64px;
+    padding: 8px 10px;
+    margin: 6px 0;
+    border: 1px solid var(--color-error-border);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+    resize: none;
+}
+
+.notice textarea:focus {
+    border-color: var(--color-error);
+}
+
+/* 表单面板：列表页内联新增/编辑（P08 等复用），置于工具栏下方 */
+.panel {
+    border: 1px solid var(--color-border-light);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+    background: #fffdf8;
+}
+
+/* ---------- 通用条目卡片列表（店铺/菜品/地址/购物车行复用） ---------- */
+.item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.item-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--color-border-light);
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.item-card:hover {
+    border-color: var(--color-primary-light);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+}
+
+.item-card .logo-mini {
+    width: 46px;
+    height: 46px;
+    flex: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    color: #fff;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.item-card .item-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.item-card .item-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-title);
+}
+
+.item-card .item-desc {
+    margin-top: 3px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- 空状态与分页 ---------- */
+.empty {
+    padding: 28px 0;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 14px;
+}
+
+.pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--color-text-sub);
+}
+
+/* ---------- 页脚 ---------- */
+.footer {
+    margin-top: 18px;
+    padding: 10px 0 14px;
+    border-top: 1px solid var(--color-border-light);
+    text-align: center;
+    font-size: 12px;
+    color: #bbb;
+}
+
+/* 应用壳页面：页脚恒在页面最底且随内容一起滚动（不钉住视口） */
+.shell .footer {
+    /* 内容不足一屏时 auto 外边距把页脚推到卡片底边；内容溢出时页脚位于文档末尾，随滚动自然进出视野 */
+    margin-top: auto;
+}
+
+/* ---------- 移动端适配 ---------- */
+@media (max-width: 480px) {
+    .page {
+        padding: 12px 10px 24px;
+    }
+
+    .shell .page {
+        padding: 0;
+    }
+
+    /* 窄屏卡片通铺：去掉左右描边，与顶栏全宽连接 */
+    .shell .card {
+        border-left: 0;
+        border-right: 0;
+    }
+
+    .card {
+        padding: 20px 16px 18px;
+        border-radius: 12px;
+    }
+
+    /* 顶栏窄屏折行：导航独占第二行并横向滚动 */
+    .topbar-inner {
+        padding: 8px 12px;
+        gap: 8px;
+    }
+
+    .topbar-title,
+    .topbar-name {
+        display: none;
+    }
+
+    .topbar-nav {
+        order: 3;
+        width: 100%;
+        margin-left: 0;
+        overflow-x: auto;
+    }
+
+    .brand h1 {
+        font-size: 17px;
+    }
+
+    .table th,
+    .table td {
+        padding: 8px 6px;
+        font-size: 13px;
+    }
+}
+
+/* =====================================================================
+   视觉刷新：清爽的配送运营工作台主题
+   保留原有组件命名与交互，只统一颜色、层级、背景和密度。
+   =====================================================================
+*/
+
+html, body {
+    background: var(--color-bg);
+}
+
+body {
+    color: var(--color-text);
+}
+
+.topbar {
+    background: var(--topbar-bg);
+    border-bottom: 1px solid var(--topbar-border);
+    box-shadow: 0 4px 18px rgba(0, 21, 41, .16);
+}
+
+.topbar-inner {
+    max-width: 1180px;
+    padding: 10px 20px;
+}
+
+.topbar-logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: var(--color-primary);
+    box-shadow: none;
+}
+
+.topbar-title { color: #f4fbfc; }
+.topbar-nav a { color: var(--topbar-text); border-radius: 7px; }
+.topbar-nav a:hover { color: var(--topbar-text-active); background: var(--side-hover); }
+.topbar-nav a.active { color: var(--topbar-text-active); background: var(--topbar-active-bg); }
+.topbar-name { color: var(--topbar-text); }
+.topbar-user .badge { background: var(--side-hover); color: var(--topbar-text); }
+.topbar-user .btn { color: var(--topbar-text); border-color: var(--side-hover); background: transparent; }
+.topbar-user .btn:hover { color: var(--topbar-text-active); background: var(--side-hover); }
+
+.page {
+    padding: 30px 20px 42px;
+    background: transparent;
+}
+
+.card {
+    width: min(100%, 1180px);
+    border: 1px solid #dce6eb;
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    padding: 30px 34px 26px;
+}
+
+.shell .page { padding: 0 20px; }
+.shell .card { border-left: 1px solid #dce6eb; border-right: 1px solid #dce6eb; }
+
+.brand { border-bottom: 1px solid var(--color-border-light); padding-bottom: 18px; }
+.brand .logo { background: var(--color-primary); box-shadow: none; border-radius: 10px; }
+.brand h1 { color: var(--color-text-title); }
+.brand p { color: var(--color-text-sub); }
+
+.toolbar, .panel {
+    background: #f7fafb;
+    border: 1px solid var(--color-border-light);
+    border-radius: 9px;
+}
+
+.field input, .field select, .field textarea, .qty-input {
+    border-color: #cbd9df;
+    background: #fbfdfe;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-border-light); }
+
+.submit, .btn.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    box-shadow: none;
+}
+.submit:hover, .btn.primary:hover { filter: brightness(0.92); box-shadow: none; }
+.btn { border-color: var(--color-border); color: var(--color-primary); background: #fff; }
+.btn:hover { background: var(--color-bg); border-color: var(--color-primary); }
+.btn.danger { background: var(--color-error); border-color: var(--color-error); }
+
+.badge { background: var(--color-bg); color: var(--color-text-sub); }
+.badge.success { background: var(--color-success-bg); color: var(--color-success); }
+.badge.error { background: var(--color-error-bg); color: var(--color-error); }
+
+.table th { background: var(--color-bg); color: var(--color-text-sub); }
+.table th, .table td { border-bottom-color: var(--color-border-light); }
+.detail-row > td { background: var(--color-bg); }
+.price { color: var(--color-primary); }
+.empty { color: var(--color-text-muted); }
+.footer { color: var(--color-text-muted); border-top-color: var(--color-border-light); }
+
+@media (max-width: 767px) {
+    .page { padding: 16px 10px 28px; }
+    .shell .page { padding: 0 10px; }
+    .card { padding: 22px 16px 20px; border-radius: 10px; }
+    .topbar-inner { padding: 8px 12px; }
+}
+
+/* ---------- Element Plus 主色对齐本项目主题，覆盖 EP 默认蓝 ---------- */
+/* style.css 在 element-plus.css 之后加载，同特异性 :root 后定义胜出 */
+:root {
+    --el-color-primary: #2563eb;
+    --el-color-primary-light-3: #4d82f0;
+    --el-color-primary-light-5: #7ba3f5;
+    --el-color-primary-light-7: #a8c4f9;
+    --el-color-primary-light-8: #c0d6fb;
+    --el-color-primary-light-9: #e8effd;
+    --el-color-primary-dark-2: #1d4ed8;
+}
+
+/* ---------- 登录卡防覆盖：文件尾 .card 通用规则会覆盖 .auth-card，用组合选择器提权取回 ---------- */
+.card.auth-card {
+    width: min(100%, 880px);
+    padding: 0;
+}
+
+.auth-card .field input,
+.auth-card .field select,
+.auth-card .field textarea {
+    border-color: transparent;
+    background: #f5f7fa;
+}
+
+.auth-card .field input:focus,
+.auth-card .field select:focus,
+.auth-card .field textarea:focus {
+    background: #fff;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.auth-card .submit {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
+
+/* ---------- 主题切换按钮（顶栏用户区 / 登录品牌面板右上角） ---------- */
+.theme-toggle {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: 1px solid var(--side-hover);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--topbar-text);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.theme-toggle:hover {
+    background: var(--side-hover);
+    color: var(--topbar-text-active);
+}
+
+/* 登录品牌面板上的浅色变体（右上角绝对定位） */
+.auth-aside .theme-toggle {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 2;
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #fff;
+}
+
+.auth-aside .theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+
+/* ---------- 暗色主题（深灰系 #1e293b 族） ---------- */
+:root[data-theme="dark"] {
+    --color-bg: #0f172a;
+    /* 原生控件（日期选择器/select 下拉/滚动条）跟随暗色 */
+    color-scheme: dark;
+    --color-card: #1e293b;
+    --color-border: #3b4a61;
+    --color-border-light: #2c3a50;
+    --color-text: #dbe4f0;
+    --color-text-title: #f1f5f9;
+    --color-text-sub: #9fb0c7;
+    --color-text-muted: #6b7c94;
+    --color-error-bg: #3f1d1d;
+    --color-error-border: #7f2b2b;
+    --color-success-bg: #12301f;
+    --color-success-border: #1d5c33;
+    --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.45);
+    --topbar-bg: #16202e;
+    --topbar-border: #243044;
+    --side-bg: #16202e;
+    --side-hover: #243044;
+    /* Element Plus 暗色适配（常用变量） */
+    --el-bg-color: #1e293b;
+    --el-bg-color-overlay: #243044;
+    --el-fill-color-blank: #1e293b;
+    --el-fill-color-light: #243044;
+    --el-text-color-primary: #e2e8f0;
+    --el-text-color-regular: #9fb0c7;
+    --el-border-color: #3b4a61;
+    --el-border-color-light: #2c3a50;
+    /* EP 表格条纹行/细边框：与常规行同色系但有差距（避免一白一灰） */
+    --el-fill-color-lighter: #243044;
+    --el-border-color-lighter: #2c3a50;
+    /* 组件面：暗色段下游规则统一引用此变量（2026-09-12 修复：原定义误落在块外且为自引用，致 12+ 处组件底色失效——审查报告 P0-2） */
+    --dark-surface: #243044;
+}
+
+
+/* 暗色：去掉浅色背景图，纯色深灰底 */
+[data-theme="dark"] .page {
+    background: var(--color-bg);
+}
+
+/* 暗色：覆盖组件硬编码浅色 */
+[data-theme="dark"] .field input,
+[data-theme="dark"] .field select,
+[data-theme="dark"] .field textarea {
+    background: var(--dark-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+}
+
+[data-theme="dark"] .field input:focus,
+[data-theme="dark"] .field select:focus,
+[data-theme="dark"] .field textarea:focus {
+    background: var(--color-card);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+[data-theme="dark"] .tabs { background: var(--dark-surface); }
+[data-theme="dark"] .tabs button { color: var(--color-text-sub); }
+[data-theme="dark"] .tabs button.active { background: var(--color-border); color: #fff; box-shadow: none; }
+
+[data-theme="dark"] .toolbar,
+[data-theme="dark"] .panel { background: var(--dark-surface); border-color: var(--color-border-light); }
+
+[data-theme="dark"] .btn { background: var(--color-card); }
+[data-theme="dark"] .btn:hover { background: var(--dark-surface); }
+
+[data-theme="dark"] .badge { background: var(--dark-surface); }
+
+[data-theme="dark"] .table th { background: var(--dark-surface); }
+[data-theme="dark"] .detail-row > td { background: var(--dark-surface); }
+
+[data-theme="dark"] .card,
+[data-theme="dark"] .shell .card { border-color: var(--color-border-light); }
+
+[data-theme="dark"] .auth-card .field input,
+[data-theme="dark"] .auth-card .field select,
+[data-theme="dark"] .auth-card .field textarea { background: var(--dark-surface); border-color: var(--color-border); }
+[data-theme="dark"] .auth-card .field input:focus { background: var(--color-card); }
+[data-theme="dark"] .auth-aside { background: linear-gradient(160deg, #1d4ed8, #0b1220); }
+
+[data-theme="dark"] .role-card { background: var(--color-card); border-color: var(--color-border); }
+[data-theme="dark"] .role-card.active { background: var(--dark-surface); }
+[data-theme="dark"] .role-card strong { color: var(--color-text); }
+
+[data-theme="dark"] .topbar-nav a:hover { background: var(--side-hover); color: #fff; }
+[data-theme="dark"] .topbar-nav a.active { background: var(--topbar-active-bg); color: #fff; }
+
+/* 暗色：全局裸输入控件（toolbar 内无 .field 包裹的 input/select/textarea） */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+    background: var(--dark-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--color-text-muted);
+}
+
+/* 暗色：店铺/菜品列表卡片 */
+[data-theme="dark"] .item-card {
+    background: var(--dark-surface);
+    border-color: var(--color-border-light);
+}
+
+/* 暗色：地址选项/数量输入等硬编码浅色组件 */
+[data-theme="dark"] .address-option,
+[data-theme="dark"] .qty-input {
+    background: var(--dark-surface);
+    border-color: var(--color-border);
+}
+
+/* 暗色：注册角色卡强调对比增强（蓝调底 + 亮蓝边 + 白字） */
+[data-theme="dark"] .role-card.active {
+    background: rgba(37, 99, 235, 0.28);
+    border-color: var(--color-primary-light);
+}
+
+[data-theme="dark"] .role-card.active strong {
+    color: #fff;
+}
+
+/* 暗色：保留 primary 按钮蓝底强调（防通用 .btn 暗色覆盖吞掉，如菜品“上架”） */
+[data-theme="dark"] .btn.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+}
+
+[data-theme="dark"] .btn.primary:hover {
+    background: var(--color-primary-light);
+}
+
+/* ---------- 顶栏高度全局统一 56px（account 静态 admin-layout 与其他页对齐，消除切换高差） ---------- */
+/* 内容通栏不居中：左右 padding 恒定，任何页面（含侧边栏内顶栏）边距一致 */
+.topbar-inner {
+    max-width: none;
+    margin: 0;
+    height: 56px;
+    padding: 0 24px;
+    box-sizing: border-box;
+    flex-wrap: nowrap;
+}
+
+/* 移动端：恢复自适应高度与换行，避免窄屏挤压 */
+@media (max-width: 767px) {
+    .topbar-inner {
+        height: auto;
+        min-height: 48px;
+        padding: 8px 12px;
+        flex-wrap: wrap;
+    }
+}
+
+/* ---------- 登录页背景图 + 毛玻璃卡片（纯 CSS 实现，无需引入任何库） ---------- */
+/* 背景图：自绘蓝色系矢量（主色 #2563eb 族，整幅蓝底），cover 铺满；
+   兼底色取主色蓝，图片加载失败时仍能保住蓝底与玻璃质感；暗色主题另加暗罩叠层 */
+.auth-page {
+    background: var(--color-primary) url("img/login-bg.svg") center / cover no-repeat;
+}
+
+/* 卡片毛玻璃：半透明白底 + 背景模糊 + 提饱和，蓝底透出形成磨砂质感；边缘半透明描边 + 深色投影拉开层次。
+   白底不透明度取 0.42：过高（如 0.55 以上）在蓝底上会被冲成接近纯白，看不出半透明 */
+.auth-card {
+    background: rgba(255, 255, 255, 0.42);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+    backdrop-filter: blur(18px) saturate(1.35);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+/* 页签条同步半透明：不透明浅灰条（.tabs 底色 #eef2f7）会在玻璃卡上盖出一块实色区 */
+.auth-card .tabs {
+    background: rgba(255, 255, 255, 0.32);
+}
+
+/* 左品牌面板半透明渐变，与毛玻璃呼应（不透明度降低让蓝底透出） */
+.auth-aside {
+    background: linear-gradient(160deg, rgba(29, 78, 216, 0.72), rgba(15, 23, 42, 0.78));
+}
+
+/* 表单输入框微透明保持可读性 */
+.auth-card .field input,
+.auth-card .field select,
+.auth-card .field textarea {
+    background: rgba(245, 247, 250, 0.75);
+}
+
+/* 暗色：背景图叠暗罩 + 卡片/面板暗色半透明 */
+[data-theme="dark"] .auth-page {
+    background: linear-gradient(rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.9)), url("img/login-bg.svg") center / cover no-repeat;
+}
+
+[data-theme="dark"] .auth-card {
+    background: rgba(30, 41, 59, 0.6);
+    border-color: rgba(148, 163, 184, 0.25);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* 暗色：页签条改用深色半透明，避免亮白条突兀 */
+[data-theme="dark"] .auth-card .tabs {
+    background: rgba(15, 23, 42, 0.45);
+}
+
+[data-theme="dark"] .auth-aside {
+    background: linear-gradient(160deg, rgba(29, 78, 216, 0.85), rgba(11, 18, 32, 0.9));
+}
+
+[data-theme="dark"] .auth-card .field input,
+[data-theme="dark"] .auth-card .field select,
+[data-theme="dark"] .auth-card .field textarea {
+    background: rgba(36, 48, 68, 0.75);
+}
+
+/* =====================================================================
+   9/11 A 档增量（A1 未支付倒计时 / A3 取餐码 / A4 售罄标 + 低库存预警）
+   一律置于文件尾，同特异性时后定义胜出；每项均补暗色变体
+   ===================================================================== */
+
+/* ---------- 中性提示条（倒计时归零自动刷新等非成败类信息） ---------- */
+.notice.info {
+    background: #eef4ff;
+    color: var(--color-primary);
+    border: 1px solid #c7dbfd;
+}
+
+[data-theme="dark"] .notice.info {
+    background: #1b2a44;
+    color: #93c5fd;
+    border-color: #2b4a75;
+}
+
+/* ---------- A1 未支付倒计时（P05 待支付卡片 mm:ss） ---------- */
+.countdown {
+    display: inline-block;
+    min-width: 54px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--color-bg);
+    color: var(--color-primary);
+    font-family: Consolas, Menlo, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-align: center;
+}
+
+/* 剩余不足 1 分钟转红色告警 */
+.countdown.urgent {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+}
+
+[data-theme="dark"] .countdown {
+    background: #1b2a44;
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .countdown.urgent {
+    background: #3f1d1d;
+    color: #ff7875;
+}
+
+/* ---------- A3 取餐码（订单号后四位大字，商家出餐 / 骑手取餐核对） ---------- */
+.pickup-code {
+    display: inline-block;
+    flex: none;
+    min-width: 76px;
+    padding: 4px 10px;
+    border: 1px dashed var(--color-primary-light);
+    border-radius: 8px;
+    background: var(--color-bg);
+    text-align: center;
+    line-height: 1.15;
+}
+
+.pickup-code-label {
+    display: block;
+    font-size: 11px;
+    color: var(--color-text-muted);
+}
+
+.pickup-code b {
+    display: block;
+    font-family: Consolas, Menlo, monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--color-primary);
+}
+
+/* 表格列内紧凑化：字号收敛，避免撑高订单管理行 */
+.table .pickup-code {
+    min-width: 64px;
+    padding: 2px 6px;
+}
+
+.table .pickup-code b {
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+[data-theme="dark"] .pickup-code {
+    background: #1b2a44;
+    border-color: var(--color-primary);
+}
+
+[data-theme="dark"] .pickup-code b {
+    color: #93c5fd;
+}
+
+/* ---------- A4 售罄标 + 低库存预警 ---------- */
+/* 预警徽章（琥珀色，与 error 红 / success 绿 区分层级） */
+.badge.warn {
+    background: #fff7e6;
+    color: #d46b08;
+}
+
+[data-theme="dark"] .badge.warn {
+    background: #3a2c14;
+    color: #f0a04b;
+}
+
+/* 顾客端售罄菜品：整卡置灰去色，悬停不再高亮（按钮同步禁用） */
+.item-card.sold-out {
+    opacity: 0.55;
+    filter: grayscale(0.65);
+}
+
+.item-card.sold-out:hover {
+    border-color: var(--color-border-light);
+    box-shadow: none;
+}
+
+/* 商家端菜品管理：库存 < 10（含售罄）整行高亮 */
+.table tr.row-low-stock > td {
+    background: #fff7e6;
+}
+
+[data-theme="dark"] .table tr.row-low-stock > td {
+    background: #33291a;
+}
+
+/* ---------- A6 顶栏/侧边栏待办角标（计数取自已有列表接口 total） ---------- */
+.nav-badge {
+    display: inline-block;
+    min-width: 18px;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--color-error);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+/* 导航激活项（蓝底）上反白，保证对比度 */
+.topbar-nav a.active .nav-badge,
+.admin-side-nav a.active .nav-badge {
+    background: #fff;
+    color: var(--color-error);
+}
+
+/* 侧边栏导航为 block 链接：角标靠右对齐，不影响文字起始位置 */
+.admin-side-nav .nav-badge {
+    float: right;
+    margin-top: 1px;
+}
+
+/* 工具栏内的返回按钮（P14 订单详情：与打印小票/再来一单同栏，推到最右） */
+/* 既有 .back-btn 规则限定在 .brand 作用域（P03 品牌行），工具栏内需单独一条 */
+.toolbar .back-btn {
+    margin-left: auto;
+}
+
+/* ---------- A7 打印友好的订单小票（order-detail “打印小票”按钮触发） ---------- */
+/* 页面禁写 <style> 块，打印规则集中于此；只输出订单号/取餐码/明细/金额/地址快照/备注 */
+@media print {
+    /* 导航、侧边栏、页脚、操作按钮、提示条、筛选工具栏一律不打 */
+    .topbar,
+    .admin-side,
+    .footer,
+    .pager,
+    .notice,
+    .tabs,
+    .toolbar,
+    .btn,
+    .submit,
+    .link-btn,
+    .theme-toggle,
+    .brand .logo {
+        display: none !important;
+    }
+
+    /* 解除屏幕态的视口锁定与卡片内部滚动，否则打印只出第一屏 */
+    .shell,
+    .shell .card {
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    #app,
+    #app.admin-layout,
+    .admin-main,
+    .page,
+    .shell .page {
+        display: block !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    html,
+    body {
+        background: #fff !important;
+        color: #000 !important;
+        font-size: 12px;
+    }
+
+    /* 卡片去装饰：纸上不需要宽度限制、圆角、描边与阴影 */
+    .card,
+    .shell .card {
+        width: auto !important;
+        max-width: none !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: #fff !important;
+    }
+
+    .brand {
+        margin-bottom: 10px !important;
+        padding-bottom: 6px !important;
+        border-bottom: 1px solid #000 !important;
+        text-align: left !important;
+    }
+
+    /* 正文统一黑字白底：打印机默认不打背景色，徽章保留描边以免丢边界 */
+    .brand h1,
+    .brand p,
+    .field,
+    .field label,
+    .tip,
+    .detail-summary,
+    .detail-label,
+    .item-title,
+    .item-desc,
+    .price,
+    .badge,
+    .empty {
+        color: #000 !important;
+        background: none !important;
+        box-shadow: none !important;
+    }
+
+    .tip {
+        margin: 0 0 6px !important;
+    }
+
+    .badge {
+        padding: 0 6px !important;
+        border: 1px solid #000 !important;
+    }
+
+    /* 取餐码纸上放大加粗，便于后厨与骑手核对 */
+    .pickup-code {
+        border: 1px solid #000 !important;
+        background: none !important;
+    }
+
+    .pickup-code b {
+        color: #000 !important;
+        font-size: 26px !important;
+    }
+
+    .pickup-code-label {
+        color: #000 !important;
+    }
+
+    /* 表格去横向滚动与最小宽，避免列被截断 */
+    .table-wrap {
+        overflow: visible !important;
+    }
+
+    .table,
+    .table-wrap .table {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .table th,
+    .table td {
+        padding: 4px 6px !important;
+        color: #000 !important;
+        background: none !important;
+        border-bottom: 1px solid #999 !important;
+    }
+
+    /* 小票尽量一页出：字段块、表格与摘要不在中间断页 */
+    .field,
+    .table-wrap,
+    .detail-summary {
+        page-break-inside: avoid;
+    }
+}
+
+/* ---------- 登录页灰字提档：毛玻璃卡上 --color-text-muted 对比度偏低 ----------
+   取 --color-text-sub（亮 #4b5a70 / 暗 #9fb0c7），变量随主题切换，无需另写暗色硬编码 */
+.auth-card .tip,
+.auth-card .footer {
+    color: var(--color-text-sub);
+}
+
+/* ---------- B4/B5 增量：店铺评分文字与热销徽章（2026-09-11） ----------
+   颜色走设计变量，暗色主题自动跟随 */
+.shop-rating {
+    margin-left: 6px;
+    font-size: 12px;
+    color: var(--color-text-sub);
+}
+
+.badge.hot {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    border-color: var(--color-error-border);
+}
+
+/* ---------- 错误页（webapp/error.html，web.xml error-page 兜底 404/500/Throwable） ----------
+   复用 .page/.card/.btn 既有组件，仅补充窄卡与错误码排版；颜色走设计变量，暗色自动跟随 */
+.card.error-card {
+    width: min(100%, 460px);
+    text-align: center;
+}
+
+.error-card .error-code {
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--color-primary);
+}
+
+.error-card h1 {
+    margin: 8px 0 10px;
+    font-size: 20px;
+    color: var(--color-text-title);
+}
+
+.error-card .tip {
+    margin: 0;
+}
+
+.error-card .btn {
+    margin-top: 18px;
+}
+
+/* ---------- 找回审批验证码展示（admin.html 找回审批页签，2026-09-12） ---------- */
+.reset-code {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--color-primary);
+}
+
+/* ---------- 快捷日期区间按钮（admin 统计/订单查询、merchant 经营数据，2026-09-12） ---------- */
+.quick-range {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.btn.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+}
+
+/* ---------- 管理端窄屏适配（≤767px，2026-09-12）：侧边栏转为顶部横向导航条 ----------
+   窄屏下侧边栏转为顶部横向滚动导航条（导航可达性优先于字面"隐藏"），卡片与表格横向滚动。 */
+@media (max-width: 767px) {
+    #app.admin-layout {
+        flex-direction: column;
+    }
+
+    .admin-side {
+        width: 100%;
+        border-right: 0;
+        border-bottom: 1px solid var(--side-hover);
+    }
+
+    /* M-1：品牌行与顶栏标题在窄屏重复，隐藏并回收 56px */
+    .admin-side-brand {
+        display: none;
+    }
+
+    .admin-side-nav {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px;
+        overflow-x: auto;
+        white-space: nowrap;
+        scrollbar-width: thin;
+        scrollbar-color: #b9c8e8 transparent;
+    }
+
+    .admin-side-nav a {
+        flex: none;
+        padding: 6px 10px;
+        border-radius: var(--radius-control);
+    }
+
+    .admin-side-nav a.active {
+        background: var(--topbar-active-bg);
+    }
+
+    .admin-main {
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+    }
+}
+
+/* ---------- 移动端摘要卡简化（≤767px，2026-09-12 用户反馈） ----------
+   窄屏下 my-orders/rider-delivery 摘要卡的简要描述行（菜品/订单号/下单时间/送达地址）
+   因宽度不足截断为省略号不可读：按用户口径隐藏简要行——
+   订单卡只留 店名+状态+金额+操作按钮，骑手配送卡只留 店名+状态+取餐码+详情；
+   account 工具栏的提示文字与按钮在窄屏分两行排布（按钮不再与长文字挤同一行） */
+@media (max-width: 767px) {
+    /* 倒计时行以 .countdown-row 排除在隐藏范围外，窄屏仍可见“支付剩余 mm:ss”与超时提示；其余简要行照旧隐藏 */
+    body.page-orders .item-card .item-desc:not(.countdown-row),
+    body.page-rider .item-card .item-desc {
+        display: none;
+    }
+
+    body.page-account .toolbar .tip {
+        flex: 1 1 100%;
+        margin: 0 0 8px;
+    }
+}
+
+/* 窄屏订单卡：价格与操作按钮换到第二行右对齐，店名不再被挤压竖排 */
+@media (max-width: 767px) {
+    body.page-orders .item-card {
+        flex-wrap: wrap;
+    }
+
+    body.page-orders .item-card .row-actions {
+        flex: 1 1 100%;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+    }
+}
+
+/* ---------- 登录页移动端主题切换（≤767px） ----------
+   品牌面板（含面板右上角主题按钮）在移动端隐藏，单列表单失去切换入口：
+   卡片右上角补一枚仅窄屏显示的切换按钮，页签行下移避让（审查口径：移动端可达性）。 */
+.auth-card {
+    position: relative;
+}
+
+.auth-theme-mobile {
+    display: none;
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    z-index: 2;
+}
+
+@media (max-width: 767px) {
+    .auth-theme-mobile {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .auth-card .tabs {
+        margin-top: 26px;
+    }
+}
+
+/* ---------- 窄屏地址类信息换行完整展示 ----------
+   地址管理（P06）与配送池（P10）的地址是“决定是否接单 / 核对收货”的必读信息，
+   与摘要卡的隐藏口径相反——窄屏允许折行完整展示；
+   已接单的配送详情（body.page-rider）送达地仍隐藏（“详情”按钮即展开入口），
+   两页口径差异属刻意设计，非遗漏。三个属性必须写全：只改 white-space 会留下 overflow:hidden 把第二行切掉 */
+@media (max-width: 767px) {
+    body.page-address .item-card .item-desc,
+    body.page-pool .item-card .item-desc {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+}

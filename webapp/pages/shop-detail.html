@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>店铺详情 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body>
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="shops.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="shops.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div v-if="shop" class="brand">
+                <button class="btn back-btn" type="button" @click="goBack">返回</button>
+                <div class="logo">🍽</div>
+                <h1>{{ shop.name }}</h1>
+                <p>
+                    <span class="badge" :class="{ success: shop.businessStatus === 'OPEN' }">
+                        {{ shop.businessStatus === 'OPEN' ? '营业中' : '休息中' }}
+                    </span>
+                    {{ shop.address || '' }}
+                </p>
+                <p class="brand-desc">{{ shop.description || '' }}</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div class="item-list">
+                <div v-for="d in dishes" :key="d.id" class="item-card" :class="{ 'sold-out': isSoldOut(d) }">
+                    <div class="item-main">
+                        <div class="item-title">
+                            {{ d.name }}
+                            <!-- 售罄标：库存归零显式标注，避免顾客点了才报“库存不足” -->
+                            <span v-if="isSoldOut(d)" class="badge error">已售罄</span>
+                            <!-- 热销标：近 30 天已支付销量进入本店列表前 20% -->
+                            <span v-if="isHot(d)" class="badge hot">热销</span>
+                        </div>
+                        <div class="item-desc">{{ d.description || '' }} · 库存 {{ d.stock }}</div>
+                        <div class="item-title price">¥{{ Number(d.price).toFixed(2) }}</div>
+                    </div>
+                    <button class="btn primary" type="button" @click="addDish(d)" :disabled="loading || isSoldOut(d)">
+                        {{ isSoldOut(d) ? '售罄' : '加购' }}
+                    </button>
+                </div>
+                <div v-if="!loading && dishes.length === 0" class="empty">该店暂无可售菜品</div>
+            </div>
+
+            <!-- 评分摘要：平均分/评价数/星级分布，无评价时全 0 -->
+            <div class="field" v-if="shop && shop.ratingSummary">
+                <label>评分摘要</label>
+                <div class="tip">
+                    平均分：{{ Number(shop.ratingSummary.averageRating).toFixed(1) }}　
+                    评价数：{{ shop.ratingSummary.reviewCount }}　
+                    分布：5星 {{ shop.ratingSummary.star5 }} · 4星 {{ shop.ratingSummary.star4 }} ·
+                    3星 {{ shop.ratingSummary.star3 }} · 2星 {{ shop.ratingSummary.star2 }} · 1星 {{ shop.ratingSummary.star1 }}
+                </div>
+            </div>
+
+            <!-- 店铺评价：折叠区，默认收起只显示条数，点击展开最新评价 -->
+            <div class="toolbar">
+                <strong>店铺评价</strong>
+                <span class="tip">共 {{ reviewTotal }} 条</span>
+                <button class="btn" type="button" @click="showReviews = !showReviews" :disabled="loading">
+                    {{ showReviews ? '收起' : '展开' }}
+                </button>
+            </div>
+            <div v-show="showReviews" class="item-list">
+                <div v-for="r in reviews" :key="r.id" class="item-card">
+                    <div class="item-main">
+                        <div class="item-title">{{ '★'.repeat(r.rating) }}{{ '☆'.repeat(5 - r.rating) }}</div>
+                        <div class="item-desc">{{ r.content || '该顾客没有填写文字评价' }}</div>
+                        <div class="item-desc">{{ r.createdAt }}</div>
+                    </div>
+                </div>
+                <div v-if="!loading && reviews.length === 0" class="empty">暂无评价</div>
+            </div>
+
+            <template v-if="cart && !cart.isEmpty">
+                <div class="toolbar">
+                    <strong>已选（{{ cart.shopName }}）</strong>
+                    <span class="tip">合计 ¥{{ Number(cart.totalAmount).toFixed(2) }}</span>
+                    <button class="btn danger" type="button" @click="clearCart" :disabled="loading">清空</button>
+                </div>
+                <div class="item-list">
+                    <div v-for="item in cart.items" :key="item.dishId" class="item-card">
+                        <div class="item-main">
+                            <div class="item-title">{{ item.dishName }}</div>
+                            <div class="item-desc">
+                                ¥{{ Number(item.price).toFixed(2) }} × {{ item.quantity }} = ¥{{ Number(item.subtotal).toFixed(2) }}
+                            </div>
+                        </div>
+                        <div class="row-actions">
+                            <button class="btn icon" type="button" @click="changeCount(item, item.quantity - 1)" :disabled="loading">−</button>
+                            <input class="qty-input" type="number" min="1" step="1" aria-label="数量"
+                                   :value="item.quantity" :disabled="loading"
+                                   @change="setCount(item, $event.target.value)">
+                            <button class="btn icon" type="button" @click="changeCount(item, item.quantity + 1)" :disabled="loading">＋</button>
+                            <button class="btn danger icon" type="button" @click="removeItem(item)" :disabled="loading">✕</button>
+                        </div>
+                    </div>
+                </div>
+                <button class="submit" type="button" @click="goOrder" :disabled="loading">去下单</button>
+            </template>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, post, requireRole, stockState } from '../common/common.js';
+
+    const shopId = new URLSearchParams(location.search).get('shopId');
+
+    const app = createApp({
+        data() {
+            return {
+                shop: null,
+                dishes: [],
+                reviews: [],
+                reviewTotal: 0,
+                showReviews: false,
+                cart: null,
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                user: null
+            };
+        },
+        computed: {
+            /** 热销口径：本店列表内销量降序前 20%（至少 1 道）且有实际销量 */
+            hotDishIds() {
+                const ranked = this.dishes
+                    .filter(d => Number(d.salesCount) > 0)
+                    .slice()
+                    .sort((a, b) => Number(b.salesCount) - Number(a.salesCount));
+                const take = Math.max(1, Math.ceil(this.dishes.length * 0.2));
+                return new Set(ranked.slice(0, take).map(d => d.id));
+            }
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            showSuccess(m) { this.noticeType = 'success'; this.notice = m; },
+            /** 菜品是否售罄（库存≤ 0）：置灰整卡并禁用加购 */
+            isSoldOut(dish) { return stockState(dish.stock) === 'SOLD_OUT'; },
+            isHot(dish) { return this.hotDishIds.has(dish.id); },
+            async loadShop() {
+                const r = await get('/api/shop/detail?shopId=' + shopId);
+                this.shop = (r && r.data) || null;
+            },
+            async loadDishes() {
+                const r = await get('/api/dish/list?shopId=' + shopId);
+                this.dishes = (r && r.data) || [];
+            },
+            async loadCart() {
+                const r = await get('/api/cart/list');
+                this.cart = (r && r.data) || { isEmpty: true, items: [], totalAmount: 0 };
+            },
+            async loadReviews() {
+                const r = await get('/api/review/by-shop?shopId=' + shopId + '&page=1&size=5');
+                const data = (r && r.data) || {};
+                this.reviews = data.records || [];
+                this.reviewTotal = Number(data.total) || 0;
+            },
+            async refresh() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    await this.loadShop();
+                    await this.loadDishes();
+                    await this.loadCart();
+                    await this.loadReviews();
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async addDish(dish) {
+                // 前端已禁点，此处再拦一道：页面停留期间库存可能被其他订单扣完
+                if (this.isSoldOut(dish)) {
+                    this.showError('该菜品已售罄，请刷新后重试');
+                    return;
+                }
+                this.loading = true;
+                try {
+                    await post('/api/cart/add', { dishId: dish.id, quantity: 1 });
+                    await this.loadCart();
+                    this.showSuccess('已加入购物车');
+                } catch (e) {
+                    this.showError(e.message || '加购失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async changeCount(item, quantity) {
+                if (quantity < 1) {
+                    await this.removeItemObject(item);
+                    return;
+                }
+                this.loading = true;
+                try {
+                    await post('/api/cart/count', { dishId: item.dishId, quantity });
+                    await this.loadCart();
+                } catch (e) {
+                    this.showError(e.message || '更新失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async setCount(item, value) {
+                const q = Number(value);
+                if (!Number.isInteger(q) || q < 1) {
+                    await this.removeItemObject(item);
+                    return;
+                }
+                if (q === item.quantity) return;
+                await this.changeCount(item, q);
+            },
+            async removeItem(item) {
+                await this.removeItemObject(item);
+            },
+            async removeItemObject(item) {
+                this.loading = true;
+                try {
+                    await post('/api/cart/remove', { dishId: item.dishId });
+                    await this.loadCart();
+                    this.showSuccess('已移除');
+                } catch (e) {
+                    this.showError(e.message || '移除失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async clearCart() {
+                this.loading = true;
+                try {
+                    await post('/api/cart/clear', {});
+                    await this.loadCart();
+                    this.showSuccess('已清空购物车');
+                } catch (e) {
+                    this.showError(e.message || '清空失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            goOrder() {
+                location.href = 'order-confirm.html';
+            },
+            goBack() {
+                if (history.length > 1) {
+                    history.back();
+                } else {
+                    location.href = 'shops.html';
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole('CUSTOMER');
+            if (!user) return;
+            this.user = user;
+            if (!shopId) {
+                this.showError('缺少店铺参数');
+                return;
+            }
+            this.refresh();
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

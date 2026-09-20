@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d4ed8"/>
+      <stop offset="0.5" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.18" r="0.6">
+      <stop offset="0" stop-color="#93c5fd" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#93c5fd" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="waveA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e40af"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="waveB" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect width="1600" height="900" fill="url(#glow)"/>
+
+  <g fill="#ffffff">
+    <circle cx="1250" cy="210" r="110" opacity="0.10"/>
+    <circle cx="1250" cy="210" r="70" opacity="0.14"/>
+    <circle cx="220" cy="700" r="150" opacity="0.07"/>
+  </g>
+
+  <g fill="#ffffff" opacity="0.5">
+    <circle cx="300" cy="180" r="5"/>
+    <circle cx="520" cy="120" r="4"/>
+    <circle cx="760" cy="200" r="6"/>
+    <circle cx="980" cy="140" r="4"/>
+    <circle cx="1420" cy="420" r="5"/>
+  </g>
+
+  <path d="M120 640 C 420 520, 640 760, 900 620 S 1380 520, 1500 600"
+        fill="none" stroke="#bfdbfe" stroke-width="6"
+        stroke-dasharray="14 12" stroke-linecap="round" opacity="0.75"/>
+
+  <g opacity="0.95">
+    <circle cx="120" cy="560" r="26" fill="#eff6ff"/>
+    <path d="M98 574 L120 640 L142 574 Z" fill="#eff6ff"/>
+    <circle cx="120" cy="560" r="10" fill="#2563eb"/>
+  </g>
+  <g opacity="0.95">
+    <circle cx="1500" cy="532" r="22" fill="#eff6ff"/>
+    <path d="M1481 544 L1500 600 L1519 544 Z" fill="#eff6ff"/>
+    <circle cx="1500" cy="532" r="9" fill="#2563eb"/>
+  </g>
+
+  <path d="M0 700 Q 300 600 620 690 T 1600 660 V 900 H 0 Z" fill="url(#waveA)" opacity="0.55"/>
+  <path d="M0 780 Q 420 680 860 780 T 1600 760 V 900 H 0 Z" fill="url(#waveB)" opacity="0.75"/>
+</svg>

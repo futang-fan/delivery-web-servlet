@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配送详情 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body class="page-rider">
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="rider-delivery.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="rider-pool.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">配</div>
+                <h1>我的配送</h1>
+                <p>已接单 → 取餐(自动配送中) → 送达 · 按序流转禁止跳步</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div class="toolbar">
+                <select id="status-filter" v-model="statusFilter" @change="search">
+                    <option value="">全部状态</option>
+                    <option value="ACCEPTED">已接单</option>
+                    <option value="DELIVERING">配送中</option>
+                    <option value="DELIVERED">已送达</option>
+                </select>
+                <span>共 {{ total }} 单</span>
+                <button class="btn" type="button" @click="load" :disabled="loading">刷新</button>
+            </div>
+
+            <div class="item-list">
+                <!-- template v-for 包裹卡片+详情面板：详情在被点击卡片正下方就地展开 -->
+                <template v-for="d in records" :key="d.deliveryId">
+                    <div class="item-card">
+                        <div class="logo-mini">{{ (d.shopName || '店').charAt(0) }}</div>
+                        <div class="item-main">
+                            <div class="item-title">
+                                {{ d.shopName }}
+                                <span class="badge" :class="{ success: d.status === 'DELIVERED' }">{{ statusText(d.status) }}</span>
+                            </div>
+                            <div class="item-desc">订单号：{{ d.orderNo }}</div>
+                            <div class="item-desc">送达：{{ d.addressSnapshot }}</div>
+                        </div>
+                        <!-- A3 取餐码：卡片右侧大字常驻，到店取餐时与商家口头核对 -->
+                        <span class="pickup-code">
+                            <span class="pickup-code-label">取餐码</span>
+                            <b>{{ codeOf(d.orderNo) }}</b>
+                        </span>
+                        <button class="btn" type="button" @click="toggleDetail(d)" :disabled="loading">
+                            {{ detail && detail.deliveryId === d.deliveryId ? '收起' : '详情' }}
+                        </button>
+                    </div>
+
+                    <!-- 履约详情面板：节点时间线 + 下一节点操作 + 配送说明反馈 -->
+                    <div v-if="detail && detail.deliveryId === d.deliveryId" class="panel">
+                        <div class="panel-header">
+                            <strong>配送详情 {{ detail.orderNo }}</strong>
+                            <button class="btn" type="button" @click="detail = null" :disabled="loading">关闭</button>
+                        </div>
+                        <div class="detail-summary">
+                            <div><span class="detail-label">取餐地址</span><span>{{ detail.shopAddress }}</span></div>
+                            <div><span class="detail-label">收货地址</span><span>{{ detail.addressSnapshot }}</span></div>
+                            <div><span class="detail-label">实付</span><span>¥{{ Number(detail.payAmount).toFixed(2) }}</span></div>
+                        </div>
+                        <div class="detail-summary">
+                            <div><span class="detail-label">抢单时间</span><span>{{ detail.acceptedAt || '—' }}</span></div>
+                            <div><span class="detail-label">取餐时间</span><span>{{ detail.pickedAt || '—' }}</span></div>
+                            <div><span class="detail-label">送达时间</span><span>{{ detail.deliveredAt || '—' }}</span></div>
+                        </div>
+                        <div v-if="detail.remark" class="tip">配送说明：{{ detail.remark }}</div>
+
+                        <div class="form-actions">
+                            <button v-if="detail.status === 'ACCEPTED'" class="btn primary" type="button"
+                                    @click="node('PICKED')" :disabled="loading">确认取餐</button>
+                            <button v-else-if="detail.status === 'DELIVERING'" class="btn primary" type="button"
+                                    @click="node('DELIVERED')" :disabled="loading">确认送达</button>
+                            <span v-else-if="detail.status === 'DELIVERED'" class="tip">该配送已送达，履约完成</span>
+                        </div>
+
+                        <div class="field">
+                            <label for="r-remark">配送说明 / 异常反馈</label>
+                            <textarea id="r-remark" v-model.trim="remarkText" maxlength="200"
+                                      placeholder="选填，如：联系不上顾客已放前台"></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn" type="button" @click="submitRemark" :disabled="loading">反馈说明</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div v-if="!loading && records.length === 0" class="empty">还没有承接的配送任务，先去配送池抢单</div>
+
+            <div class="pager" v-if="total > 0">
+                <button class="btn" type="button" @click="turn(page - 1)" :disabled="page <= 1 || loading">上一页</button>
+                <span>第 {{ page }} / {{ pages }} 页</span>
+                <button class="btn" type="button" @click="turn(page + 1)" :disabled="page >= pages || loading">下一页</button>
+            </div>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, post, label, DELIVERY_STATUS_TEXT, requireRole, pickupCode } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                statusFilter: '',
+                records: [],
+                page: 1,
+                size: 10,
+                total: 0,
+                pages: 0,
+                detail: null,
+                remarkText: '',
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                user: null
+            };
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            showSuccess(m) { this.noticeType = 'success'; this.notice = m; },
+            statusText(s) { return label(DELIVERY_STATUS_TEXT, s); },
+            codeOf(orderNo) { return pickupCode(orderNo); },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                this.detail = null;
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.page);
+                    params.set('size', this.size);
+                    if (this.statusFilter) params.set('status', this.statusFilter);
+                    const result = await get('/api/delivery/my?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.records = data.records || [];
+                    this.total = Number(data.total) || 0;
+                    this.pages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            search() {
+                this.page = 1;
+                this.load();
+            },
+            turn(page) {
+                this.page = page;
+                this.load();
+            },
+            toggleDetail(d) {
+                if (this.detail && this.detail.deliveryId === d.deliveryId) {
+                    this.detail = null;
+                    return;
+                }
+                this.detail = d;
+                this.remarkText = d.remark || '';
+            },
+            async node(status) {
+                const deliveryId = this.detail.deliveryId;
+                this.loading = true;
+                try {
+                    await post('/api/delivery/node', { deliveryId, status });
+                    await this.load();
+                    // 重新展开同一配送的详情，刷新节点时间线（筛选后不在当页则保持收起）
+                    const fresh = this.records.find(r => r.deliveryId === deliveryId);
+                    if (fresh) {
+                        this.detail = fresh;
+                        this.remarkText = fresh.remark || '';
+                    }
+                    this.showSuccess('履约节点已更新');
+                } catch (e) {
+                    this.showError(e.message || '节点更新失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async submitRemark() {
+                if (!this.remarkText) {
+                    this.showError('请填写配送说明');
+                    return;
+                }
+                this.loading = true;
+                const deliveryId = this.detail.deliveryId;
+                try {
+                    await post('/api/delivery/remark', { deliveryId, remark: this.remarkText });
+                    await this.load();
+                    const fresh = this.records.find(r => r.deliveryId === deliveryId);
+                    if (fresh) {
+                        this.detail = fresh;
+                    }
+                    this.showSuccess('配送说明已反馈');
+                } catch (e) {
+                    this.showError(e.message || '反馈失败');
+                } finally {
+                    this.loading = false;
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole('RIDER');
+            if (!user) return;
+            this.user = user;
+            this.load();
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

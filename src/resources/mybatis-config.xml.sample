@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+<!--
+    MyBatis 全局配置。
+    新机器请填入本机密码。
+-->
+<configuration>
+
+    <settings>
+        <!-- 下划线字段自动映射驼峰属性：created_at -> createdAt -->
+        <setting name="mapUnderscoreToCamelCase" value="true"/>
+        <!-- 空参数统一按 NULL 处理，避免可空 DATETIME 字段传 null 时报错 -->
+        <setting name="jdbcTypeForNull" value="NULL"/>
+    </settings>
+
+    <environments default="dev">
+        <environment id="dev">
+            <transactionManager type="JDBC"/>
+            <dataSource type="POOLED">
+                <property name="driver" value="com.mysql.cj.jdbc.Driver"/>
+                <property name="url"
+                          value="jdbc:mysql://localhost:3306/DeliveryWeb_db?useUnicode=true&amp;characterEncoding=utf8&amp;useSSL=false&amp;serverTimezone=Asia/Shanghai&amp;allowPublicKeyRetrieval=true"/>
+                <property name="username" value="root"/>
+                <!--  替换为本机 MySQL root 密码 -->
+                <property name="password" value="CHANGE_ME"/>
+                <!-- 显式连接池上限：抢单并发场景防连接等待（POOLED 默认 10） -->
+                <property name="poolMaximumActiveConnections" value="20"/>
+            </dataSource>
+        </environment>
+    </environments>
+
+    <mappers>
+        <!-- 新增 Dao 接口后在此注册 -->
+        <mapper class="com.deliveryweb.dao.UserDao"/>
+        <mapper class="com.deliveryweb.dao.ShopDao"/>
+        <mapper class="com.deliveryweb.dao.AddressDao"/>
+        <mapper class="com.deliveryweb.dao.DishDao"/>
+        <mapper class="com.deliveryweb.dao.OrderDao"/>
+        <mapper class="com.deliveryweb.dao.OrderItemDao"/>
+        <mapper class="com.deliveryweb.dao.RefundDao"/>
+        <mapper class="com.deliveryweb.dao.DeliveryDao"/>
+        <mapper class="com.deliveryweb.dao.ReviewDao"/>
+        <mapper class="com.deliveryweb.dao.StatDao"/>
+    </mappers>
+
+</configuration>

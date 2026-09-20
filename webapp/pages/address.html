@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地址管理 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body class="page-address">
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="address.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="shops.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">址</div>
+                <h1>收货地址</h1>
+                <p>一个默认地址 · 下单时自动选取</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div class="toolbar">
+                <span>共 {{ addresses.length }} 个地址</span>
+                <button class="btn primary" type="button" @click="openForm" :disabled="loading">新增地址</button>
+            </div>
+
+            <form v-if="showForm" novalidate @submit.prevent="save" class="panel">
+                <div class="panel-header">
+                    <strong>{{ form.id ? '编辑地址' : '新增地址' }}</strong>
+                    <button class="btn" type="button" @click="closeForm" :disabled="loading">关闭</button>
+                </div>
+                <div class="field">
+                    <label for="a-receiver">收货人</label>
+                    <input id="a-receiver" v-model.trim="form.receiver" type="text" maxlength="50" placeholder="收货人姓名">
+                </div>
+                <div class="field">
+                    <label for="a-phone">联系电话</label>
+                    <input id="a-phone" v-model.trim="form.phone" type="tel" maxlength="11" placeholder="11 位手机号">
+                </div>
+                <div class="field">
+                    <label for="a-detail">详细地址</label>
+                    <textarea id="a-detail" v-model.trim="form.detail" maxlength="200" placeholder="详细收货地址"></textarea>
+                </div>
+                <div class="field">
+                    <label class="checkbox-field">
+                        <input type="checkbox" v-model="form.isDefault">
+                        设为默认地址
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="submit" type="submit" :disabled="loading">{{ loading ? '保存中…' : '保存' }}</button>
+                    <button class="btn" type="button" @click="closeForm" :disabled="loading">取消</button>
+                </div>
+            </form>
+
+            <div class="item-list">
+                <div v-for="a in addresses" :key="a.id" class="item-card">
+                    <div class="item-main">
+                        <div class="item-title">
+                            {{ a.receiver }} · {{ a.phone }}
+                            <span v-if="a.isDefault" class="badge success">默认地址</span>
+                        </div>
+                        <div class="item-desc">{{ a.detail }}</div>
+                    </div>
+                    <div class="row-actions">
+                        <button v-if="!a.isDefault" class="btn" type="button"
+                                @click="setDefault(a)" :disabled="loading">设默认</button>
+                        <button class="btn" type="button" @click="edit(a)" :disabled="loading">编辑</button>
+                        <button class="btn danger" type="button" @click="remove(a)" :disabled="loading">删除</button>
+                    </div>
+                </div>
+                <div v-if="!loading && addresses.length === 0" class="empty">还没有收货地址</div>
+            </div>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, post, requireRole } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                addresses: [],
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                showForm: false,
+                form: { id: null, receiver: '', phone: '', detail: '', isDefault: false },
+                user: null
+            };
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            showSuccess(m) { this.noticeType = 'success'; this.notice = m; },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const result = await get('/api/address/list');
+                    this.addresses = (result && result.data) || [];
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            openForm() {
+                this.form = { id: null, receiver: '', phone: '', detail: '', isDefault: false };
+                this.showForm = true;
+                this.notice = '';
+            },
+            edit(address) {
+                this.form = {
+                    id: address.id,
+                    receiver: address.receiver,
+                    phone: address.phone,
+                    detail: address.detail,
+                    isDefault: address.isDefault
+                };
+                this.showForm = true;
+                this.notice = '';
+            },
+            closeForm() {
+                this.showForm = false;
+                this.notice = '';
+            },
+            async save() {
+                const f = this.form;
+                if (!f.receiver) { this.showError('请填写收货人姓名'); return; }
+                if (!/^\d{11}$/.test(f.phone)) { this.showError('请输入11位手机号'); return; }
+                if (!f.detail) { this.showError('请填写详细地址'); return; }
+                this.loading = true;
+                try {
+                    await post('/api/address/save', f);
+                    this.closeForm();
+                    await this.load();
+                    this.showSuccess('保存成功');
+                } catch (e) {
+                    this.showError(e.message || '保存失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async setDefault(address) {
+                this.loading = true;
+                try {
+                    await post('/api/address/set-default', { id: address.id });
+                    await this.load();
+                    this.showSuccess('已设为默认地址');
+                } catch (e) {
+                    this.showError(e.message || '操作失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async remove(address) {
+                if (!window.confirm('确定删除该地址吗？')) return;
+                this.loading = true;
+                try {
+                    await post('/api/address/delete', { id: address.id });
+                    await this.load();
+                    this.showSuccess('已删除');
+                } catch (e) {
+                    this.showError(e.message || '删除失败');
+                } finally {
+                    this.loading = false;
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole('CUSTOMER');
+            if (!user) return;
+            this.user = user;
+            this.load();
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

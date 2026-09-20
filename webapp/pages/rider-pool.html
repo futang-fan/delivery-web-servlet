@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配送池 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body class="page-pool">
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="rider-pool.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="rider-pool.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">池</div>
+                <h1>配送池</h1>
+                <p>待抢单订单 · 同一订单仅一名骑手抢单成功</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <!-- 骑手战绩卡：纯聚合展示，让配送池页有骑手自己的数据视角 -->
+            <div class="panel" v-if="riderStats">
+                <div class="panel-header"><strong>今日战绩</strong></div>
+                <div class="tip">
+                    今日送达 {{ riderStats.todayDelivered }} 单 · 在途 {{ riderStats.activeCount }} 单 · 累计送达 {{ riderStats.deliveredTotal }} 单
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <span>共 {{ total }} 单待抢</span>
+                <button class="btn" type="button" @click="load" :disabled="loading">刷新</button>
+            </div>
+
+            <div class="item-list">
+                <div class="item-card" v-for="d in pool" :key="d.deliveryId">
+                    <div class="logo-mini">{{ (d.shopName || '店').charAt(0) }}</div>
+                    <div class="item-main">
+                        <div class="item-title">
+                            {{ d.shopName }}
+                            <span class="badge success">实付 ¥{{ Number(d.payAmount).toFixed(2) }}</span>
+                        </div>
+                        <div class="item-desc">取餐：{{ d.shopAddress }}</div>
+                        <div class="item-desc">送达：{{ d.addressSnapshot }}</div>
+                    </div>
+                    <button class="btn primary" type="button" @click="grab(d)" :disabled="loading">抢单</button>
+                </div>
+            </div>
+
+            <div v-if="!loading && pool.length === 0" class="empty">配送池暂无待抢单订单</div>
+
+            <div class="pager" v-if="total > 0">
+                <button class="btn" type="button" @click="turn(page - 1)" :disabled="page <= 1 || loading">上一页</button>
+                <span>第 {{ page }} / {{ pages }} 页</span>
+                <button class="btn" type="button" @click="turn(page + 1)" :disabled="page >= pages || loading">下一页</button>
+            </div>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, post, requireRole } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                pool: [],
+                riderStats: null,
+                page: 1,
+                size: 10,
+                total: 0,
+                pages: 0,
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                user: null
+            };
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            showSuccess(m) { this.noticeType = 'success'; this.notice = m; },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const result = await get('/api/delivery/pool?page=' + this.page + '&size=' + this.size);
+                    const data = (result && result.data) || {};
+                    this.pool = data.records || [];
+                    this.total = Number(data.total) || 0;
+                    this.pages = Number(data.pages) || 0;
+                    const stats = await get('/api/delivery/stats');
+                    this.riderStats = (stats && stats.data) || null;
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            turn(page) {
+                this.page = page;
+                this.load();
+            },
+            async grab(d) {
+                this.loading = true;
+                try {
+                    await post('/api/delivery/grab', { deliveryId: d.deliveryId });
+                    await this.load();
+                    this.showSuccess('抢单成功「' + d.orderNo + '」，请到配送详情页履约');
+                } catch (e) {
+                    this.showError(e.message || '抢单失败');
+                    await this.load();
+                } finally {
+                    this.loading = false;
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole('RIDER');
+            if (!user) return;
+            this.user = user;
+            this.load();
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

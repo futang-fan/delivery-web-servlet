@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的订单 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body class="page-orders">
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="my-orders.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="shops.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">单</div>
+                <h1>我的订单</h1>
+                <p>状态时间线 · 确认收货 · 订单评价</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div class="toolbar">
+                <select id="status-filter" v-model="statusFilter" @change="search">
+                    <option value="">全部状态</option>
+                    <option value="UNPAID">待支付</option>
+                    <option value="PENDING_ACCEPT">待商家处理</option>
+                    <option value="PREPARING">备餐中</option>
+                    <option value="PENDING_DELIVERY">待配送</option>
+                    <option value="DELIVERING">配送中</option>
+                    <option value="DELIVERED">已送达</option>
+                    <option value="COMPLETED">已完成</option>
+                    <option value="CANCELLED">已取消</option>
+                    <option value="REJECTED">已拒单</option>
+                </select>
+                <span>共 {{ total }} 单</span>
+                <button class="btn" type="button" @click="load" :disabled="loading">刷新</button>
+            </div>
+
+            <div class="item-list">
+                <!-- template v-for 包裹卡片+详情面板：详情在被点击卡片正下方就地展开（主从范式） -->
+                <template v-for="o in orders" :key="o.id">
+                    <div class="item-card">
+                        <div class="logo-mini">{{ (o.shopName || '店').charAt(0) }}</div>
+                        <div class="item-main">
+                            <div class="item-title">
+                                {{ o.shopName }}
+                                <span class="badge" :class="statusClass(o)">{{ statusText(o) }}</span>
+                                <span v-if="o.refundStatus" class="badge"
+                                      :class="{ success: o.refundStatus === 'SHOP_AGREED', error: o.refundStatus === 'SHOP_REJECTED' }">
+                                    退款·{{ refundLabelText(o.refundStatus) }}
+                                </span>
+                            </div>
+                            <div class="item-desc">菜品：{{ o.dishSummary || '—' }}</div>
+                            <div class="item-desc">订单号：{{ o.orderNo }}</div>
+                            <div class="item-desc">下单：{{ o.createdAt }}</div>
+                            <!-- A1 未支付倒计时：归零后自动重拉列表，反映后端超时取消终态 -->
+                            <!-- countdown-row：窄屏隐藏简要行时保留倒计时（P1-1 修复，2026-09-13） -->
+                            <div class="item-desc countdown-row" v-if="isUnpaid(o)">
+                                支付剩余：
+                                <span class="countdown" :class="{ urgent: remainMs(o) <= 60000 }">{{ countdownText(o) }}</span>
+                                <span v-if="remainMs(o) <= 0">已超时，等待系统取消</span>
+                            </div>
+                        </div>
+                        <div class="row-actions">
+                            <span class="price">¥{{ Number(o.payAmount).toFixed(2) }}</span>
+                            <a class="btn" :href="'order-detail.html?orderId=' + o.id">详情页</a>
+                            <button class="btn" type="button" @click="toggleDetail(o)" :disabled="loading">
+                                {{ detail && detail.order.id === o.id ? '收起' : '详情' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 订单详情面板：明细快照 + 时间线 + 确认收货 + 评价 -->
+                    <div v-if="detail && detail.order.id === o.id" class="panel">
+                        <div class="panel-header">
+                            <strong>订单详情 {{ detail.order.orderNo }}</strong>
+                            <button class="btn" type="button" @click="detail = null" :disabled="loading">关闭</button>
+                        </div>
+                        <div class="detail-summary">
+                            <div><span class="detail-label">收货地址</span><span>{{ detail.order.addressSnapshot }}</span></div>
+                            <div><span class="detail-label">备注</span><span>{{ detail.order.remark || '无' }}</span></div>
+                            <div><span class="detail-label">实付</span><span>¥{{ Number(detail.order.payAmount).toFixed(2) }}</span></div>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="table">
+                                <thead>
+                                <tr><th>菜品</th><th>单价快照</th><th>数量</th><th>小计</th></tr>
+                                </thead>
+                                <tbody>
+                                <tr v-for="it in detail.items" :key="it.id">
+                                    <td>{{ it.dishNameSnapshot }}</td>
+                                    <td>¥{{ Number(it.priceSnapshot).toFixed(2) }}</td>
+                                    <td>{{ it.quantity }}</td>
+                                    <td>¥{{ Number(it.subtotal).toFixed(2) }}</td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="detail-summary detail-summary-footer">
+                            <div><span class="detail-label">下单时间</span><span>{{ detail.order.createdAt }}</span></div>
+                            <div><span class="detail-label">支付时间</span><span>{{ detail.order.paidAt || '—' }}</span></div>
+                            <div><span class="detail-label">抢单时间</span><span>{{ detail.delivery ? detail.delivery.acceptedAt || '—' : '—' }}</span></div>
+                            <div><span class="detail-label">送达时间</span><span>{{ detail.delivery ? detail.delivery.deliveredAt || '—' : '—' }}</span></div>
+                        </div>
+                        <div class="detail-summary">
+                            <div><span class="detail-label">配送状态</span><span>{{ detail.delivery ? deliveryText(detail.delivery.status) : '未生成' }}</span></div>
+                            <div><span class="detail-label">支付状态</span><span>{{ payText(detail.order) }}</span></div>
+                            <div><span class="detail-label">退款记录</span><span>{{ detail.refund ? refundText(detail.refund.status) : '无' }}</span></div>
+                            <div v-if="detail.refund && detail.refund.remark"><span class="detail-label">退款说明</span><span>{{ detail.refund.remark }}</span></div>
+                        </div>
+
+                        <div class="form-actions" v-if="detail.order.orderStatus === 'DELIVERED'">
+                            <button class="btn primary" type="button" @click="receive(detail.order)" :disabled="loading">确认收货</button>
+                        </div>
+
+                        <!-- 退款申请：已支付且未完成、无既有退款记录时展示 -->
+                        <template v-if="canRefund(detail.order)">
+                            <div class="field">
+                                <label for="refund-reason">退款原因</label>
+                                <textarea id="refund-reason" v-model.trim="refundReason" maxlength="200"
+                                          placeholder="必填，请填写退款原因"></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button class="btn danger" type="button" @click="applyRefund" :disabled="loading">申请退款</button>
+                            </div>
+                        </template>
+
+                        <!-- 评价：按钮点击后展开（已评价回显详情，未评价显示表单），默认收起 -->
+                        <div class="form-actions" v-if="detail.review || detail.order.orderStatus === 'COMPLETED'">
+                            <button class="btn" type="button" @click="showReview = !showReview" :disabled="loading">
+                                {{ detail.review ? '评价详情' : '评价' }}
+                            </button>
+                        </div>
+                        <template v-if="showReview">
+                            <div v-if="detail.review" class="notice success">
+                                已评价：{{ '★'.repeat(detail.review.rating) }}{{ '☆'.repeat(5 - detail.review.rating) }}
+                                {{ detail.review.content || '' }}
+                            </div>
+                            <template v-else-if="detail.order.orderStatus === 'COMPLETED'">
+                                <div class="field">
+                                    <label for="rev-rating">评分</label>
+                                    <select id="rev-rating" v-model.number="reviewForm.rating">
+                                        <option :value="5">5 星 · 非常满意</option>
+                                        <option :value="4">4 星 · 满意</option>
+                                        <option :value="3">3 星 · 一般</option>
+                                        <option :value="2">2 星 · 不满意</option>
+                                        <option :value="1">1 星 · 很差</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label for="rev-content">评价内容</label>
+                                    <textarea id="rev-content" v-model.trim="reviewForm.content" maxlength="500"
+                                              placeholder="选填，说说这餐的体验"></textarea>
+                                </div>
+                                <div class="form-actions">
+                                    <button class="btn primary" type="button" @click="submitReview" :disabled="loading">提交评价</button>
+                                </div>
+                            </template>
+                        </template>
+                    </div>
+                </template>
+            </div>
+
+            <div v-if="!loading && orders.length === 0" class="empty">还没有订单，先去找店点餐</div>
+
+            <div class="pager" v-if="total > 0">
+                <button class="btn" type="button" @click="turn(page - 1)" :disabled="page <= 1 || loading">上一页</button>
+                <span>第 {{ page }} / {{ pages }} 页</span>
+                <button class="btn" type="button" @click="turn(page + 1)" :disabled="page >= pages || loading">下一页</button>
+            </div>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, post, label, ORDER_STATUS_TEXT, PAY_STATUS_TEXT, DELIVERY_STATUS_TEXT, REFUND_STATUS_TEXT, requireRole, payDeadline, formatCountdown } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                statusFilter: '',
+                orders: [],
+                page: 1,
+                size: 10,
+                total: 0,
+                pages: 0,
+                detail: null,
+                showReview: false,
+                reviewForm: { rating: 5, content: '' },
+                refundReason: '',
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                user: null,
+                // A1 倒计时：每秒刷新的当前时刻、定时器句柄与归零自刷冷却截止时刻
+                now: Date.now(),
+                timer: null,
+                expiredRefreshAt: 0
+            };
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            showSuccess(m) { this.noticeType = 'success'; this.notice = m; },
+            showInfo(m) { this.noticeType = 'info'; this.notice = m; },
+            isUnpaid(o) { return o.orderStatus === 'UNPAID'; },
+            /** 距支付截止的剩余毫秒；下单时间无效视为已超时 */
+            remainMs(o) {
+                const deadline = payDeadline(o.createdAt);
+                return deadline === null ? 0 : deadline - this.now;
+            },
+            countdownText(o) { return formatCountdown(this.remainMs(o)); },
+            tick() {
+                this.now = Date.now();
+                this.refreshIfExpired();
+            },
+            /**
+             * 倒计时归零自刷：重拉列表触发后端惰性取消检查。
+             * 后端取消扫描有 30s 节流，故同频冷却重试，避免每秒空打接口；
+             * 刷新前记录已展开的详情，刷完重新展开（与 receive() 惯例一致），避免自动刷新抽掉面板。
+             */
+            refreshIfExpired() {
+                if (this.loading || this.now < this.expiredRefreshAt) return;
+                const expired = this.orders.some(o => this.isUnpaid(o) && this.remainMs(o) <= 0);
+                if (!expired) return;
+                this.expiredRefreshAt = this.now + 30000;
+                const openId = this.detail ? this.detail.order.id : null;
+                this.load().then(async ok => {
+                    if (!ok) return;
+                    if (openId !== null) {
+                        const fresh = this.orders.find(o => o.id === openId);
+                        if (fresh) await this.toggleDetail(fresh);
+                    }
+                    const stillExpired = this.orders.some(o => this.isUnpaid(o) && this.remainMs(o) <= 0);
+                    if (stillExpired) {
+                        this.showInfo('订单支付已超时，系统正在自动取消，稍后自动刷新');
+                    } else {
+                        this.showSuccess('超时未支付订单已自动取消，菜品库存已恢复');
+                    }
+                });
+            },
+            statusText(o) { return label(ORDER_STATUS_TEXT, o.orderStatus); },
+            payText(o) { return label(PAY_STATUS_TEXT, o.payStatus); },
+            deliveryText(s) { return label(DELIVERY_STATUS_TEXT, s); },
+            refundText(s) { return label(REFUND_STATUS_TEXT, s); },
+            refundLabelText(status) { return label(REFUND_STATUS_TEXT, status); },
+            statusClass(o) {
+                if (o.orderStatus === 'COMPLETED' || o.orderStatus === 'DELIVERED') return 'success';
+                if (o.orderStatus === 'CANCELLED' || o.orderStatus === 'REJECTED') return 'error';
+                return '';
+            },
+            canRefund(o) {
+                return o.payStatus === 'PAID'
+                    && ['PENDING_ACCEPT', 'PREPARING', 'PENDING_DELIVERY', 'DELIVERING', 'DELIVERED'].includes(o.orderStatus)
+                    && !this.detail.refund;
+            },
+            async applyRefund() {
+                if (!this.refundReason) {
+                    this.showError('请填写退款原因');
+                    return;
+                }
+                const orderId = this.detail.order.id;
+                this.loading = true;
+                try {
+                    await post('/api/refund/apply', { orderId, reason: this.refundReason });
+                    this.refundReason = '';
+                    await this.toggleDetail(this.detail.order);
+                    this.showSuccess('退款申请已提交，等待商家处理');
+                } catch (e) {
+                    this.showError(e.message || '退款申请失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                this.detail = null;
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.page);
+                    params.set('size', this.size);
+                    if (this.statusFilter) params.set('status', this.statusFilter);
+                    const result = await get('/api/order/list?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.orders = data.records || [];
+                    this.total = Number(data.total) || 0;
+                    this.pages = Number(data.pages) || 0;
+                    return true;
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                    return false;
+                } finally {
+                    this.loading = false;
+                }
+            },
+            search() {
+                this.page = 1;
+                this.load();
+            },
+            turn(page) {
+                this.page = page;
+                this.load();
+            },
+            async toggleDetail(order) {
+                if (this.detail && this.detail.order.id === order.id) {
+                    this.detail = null;
+                    this.showReview = false;
+                    return;
+                }
+                this.loading = true;
+                try {
+                    const result = await get('/api/order/detail?orderId=' + order.id);
+                    this.detail = (result && result.data) || null;
+                    this.reviewForm = { rating: 5, content: '' };
+                    this.showReview = false;
+                } catch (e) {
+                    this.showError(e.message || '加载详情失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async receive(order) {
+                this.loading = true;
+                try {
+                    await post('/api/order/receive', { orderId: order.id });
+                    await this.load();
+                    const fresh = this.orders.find(o => o.id === order.id);
+                    if (fresh) {
+                        await this.toggleDetail(fresh);
+                    }
+                    this.showSuccess('已确认收货「' + order.orderNo + '」，欢迎评价');
+                } catch (e) {
+                    this.showError(e.message || '确认收货失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async submitReview() {
+                this.loading = true;
+                const orderId = this.detail.order.id;
+                try {
+                    await post('/api/review/submit', {
+                        orderId,
+                        rating: this.reviewForm.rating,
+                        content: this.reviewForm.content
+                    });
+                    await this.toggleDetail(this.detail.order);
+                    this.showSuccess('评价成功，感谢反馈');
+                } catch (e) {
+                    this.showError(e.message || '评价失败');
+                } finally {
+                    this.loading = false;
+                }
+            }
+        },
+        async mounted() {
+            const user = await requireRole('CUSTOMER');
+            if (!user) return;
+            this.user = user;
+            await this.load();
+            this.timer = setInterval(this.tick, 1000);
+        },
+        unmounted() {
+            if (this.timer) clearInterval(this.timer);
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

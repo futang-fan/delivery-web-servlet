@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单详情 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body>
+<div id="app" v-cloak class="shell admin-layout">
+    <app-sidenav v-if="isManage" :user="user" brand="订单详情" logo="单"></app-sidenav>
+    <div class="admin-main">
+    <app-topbar :user="user" :show-brand="!isManage"
+                :brand="isManage ? '订单详情' : '外卖配送平台'" :show-nav="!isManage" logo="送" :brand-href="brandHome"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">单</div>
+                <h1>订单详情</h1>
+                <p>明细 · 配送 · 退款 · 评价 · 状态时间线</p>
+            </div>
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <!-- A7 打印小票 + A2 再来一单 + 返回列表：本工具栏在 @media print 下整块隐藏 -->
+            <div class="toolbar">
+                <template v-if="detail">
+                    <button class="btn" type="button" @click="printTicket"
+                            title="打印时只输出订单号、取餐码、明细、金额、地址快照与备注">打印小票</button>
+                    <button v-if="isCustomer" class="btn primary" type="button" @click="reorder" :disabled="busy"
+                            title="按原订单明细重新加购，跨店时先确认清空购物车">{{ busy ? '处理中…' : '再来一单' }}</button>
+                </template>
+                <!-- 返回上一级列表：靠右对齐；详情加载失败时仍保留退路 -->
+                <button class="btn back-btn" type="button" @click="backToList"
+                        title="返回来源列表；无浏览历史时回本人角色的订单列表">返回列表</button>
+            </div>
+
+            <div v-if="detail">
+                <!--  取餐码：订单号后四位，小票打印时一并输出 -->
+                <div class="field">
+                    <label>取餐码</label>
+                    <span class="pickup-code">
+                        <span class="pickup-code-label">订单号后四位</span>
+                        <b>{{ codeOf(detail.order.orderNo) }}</b>
+                    </span>
+                </div>
+
+                <div class="field">
+                    <label>订单信息</label>
+                    <div class="tip">
+                        订单号：{{ detail.order.orderNo }}　
+                        状态：{{ label(ORDER_STATUS_TEXT, detail.order.orderStatus) }}　
+                        支付：{{ label(PAY_STATUS_TEXT, detail.order.payStatus) }}　
+                        店铺：{{ detail.order.shopName }}<br>
+                        商品总额：{{ detail.order.totalAmount }}　实付：{{ detail.order.payAmount }}　
+                        收货地址：{{ detail.order.addressSnapshot }}<br>
+                        下单时间：{{ detail.order.createdAt }}　备注：{{ detail.order.remark || '无' }}
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label>菜品明细</label>
+                    <div v-for="(item, idx) in detail.items" :key="idx" class="tip">
+                        {{ item.dishNameSnapshot }}　单价 {{ item.priceSnapshot }}　× {{ item.quantity }}　小计 {{ item.subtotal }}
+                    </div>
+                </div>
+
+                <div class="field" v-if="detail.delivery">
+                    <label>配送信息</label>
+                    <div class="tip">
+                        配送状态：{{ label(DELIVERY_STATUS_TEXT, detail.delivery.status) }}　
+                        抢单：{{ detail.delivery.acceptedAt || '-' }}　
+                        取餐：{{ detail.delivery.pickedAt || '-' }}　
+                        送达：{{ detail.delivery.deliveredAt || '-' }}<br>
+                        配送说明：{{ detail.delivery.remark || '无' }}
+                    </div>
+                </div>
+                <div class="field" v-else>
+                    <label>配送信息</label>
+                    <div class="tip">该订单还没有配送记录</div>
+                </div>
+
+                <div class="field" v-if="detail.refund">
+                    <label>退款信息</label>
+                    <div class="tip">
+                        退款原因：{{ detail.refund.reason }}　
+                        状态：{{ label(REFUND_STATUS_TEXT, detail.refund.status) }}　
+                        处理说明：{{ detail.refund.remark || '无' }}　
+                        申请时间：{{ detail.refund.createdAt }}
+                    </div>
+                </div>
+
+                <div class="field" v-if="detail.review">
+                    <label>订单评价</label>
+                    <div class="tip">
+                        评分：{{ detail.review.rating }} 星　内容：{{ detail.review.content || '无' }}　
+                        时间：{{ detail.review.createdAt }}
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label>状态时间线</label>
+                    <div v-for="(t, i) in timeline" :key="i" class="tip">{{ t }}</div>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div class="footer">DeliveryWeb</div>
+    </div>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { get, post, requireRole, goHome, HOME_PAGES, ROLE_TEXT, ORDER_STATUS_TEXT, PAY_STATUS_TEXT,
+             DELIVERY_STATUS_TEXT, REFUND_STATUS_TEXT, label, ORDER_LIST_PAGES,
+             pickupCode, installShell } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                user: null,
+                detail: null,
+                notice: '',
+                noticeType: 'error',
+                busy: false,
+                ROLE_TEXT,
+                ORDER_STATUS_TEXT,
+                PAY_STATUS_TEXT,
+                DELIVERY_STATUS_TEXT,
+                REFUND_STATUS_TEXT
+            };
+        },
+        computed: {
+            brandHome() {
+                return (this.user && HOME_PAGES[this.user.role]) || 'shops.html';
+            },
+            isManage() {
+                return !!this.user && (this.user.role === 'ADMIN' || this.user.role === 'SHOP');
+            },
+            isCustomer() {
+                return !!this.user && this.user.role === 'CUSTOMER';
+            },
+            timeline() {
+                if (!this.detail) {
+                    return [];
+                }
+                const o = this.detail.order;
+                const d = this.detail.delivery;
+                const list = [];
+                if (o.createdAt) list.push('下单：' + o.createdAt);
+                if (o.paidAt) list.push('支付：' + o.paidAt);
+                if (o.acceptedAt) list.push('商家接单：' + o.acceptedAt);
+                if (o.preparedAt) list.push('备餐完成：' + o.preparedAt);
+                if (d && d.acceptedAt) list.push('骑手抢单：' + d.acceptedAt);
+                if (d && d.pickedAt) list.push('取餐：' + d.pickedAt);
+                if (d && d.deliveredAt) list.push('送达：' + d.deliveredAt);
+                if (o.orderStatus === 'COMPLETED') list.push('订单完成');
+                if (o.orderStatus === 'CANCELLED') list.push('订单取消');
+                if (o.orderStatus === 'REJECTED') list.push('商家拒单');
+                return list;
+            }
+        },
+        methods: {
+            label,
+            codeOf(orderNo) { return pickupCode(orderNo); },
+            /** 打印小票：样式由 style.css 的 @media print 统一控制，页面不写 <style> 块 */
+            printTicket() { window.print(); },
+            /**
+             * 再来一单：按订单明细快照（dishId + quantity）逐条复用 /api/cart/add。
+             * 下架/库存不足由 CartService 判定，前端只汇总失败项；跨店时先确认再清空购物车。
+             */
+            async reorder() {
+                const items = (this.detail && this.detail.items) || [];
+                if (!items.length) {
+                    this.showError('该订单没有可复购的菜品明细');
+                    return;
+                }
+                const order = this.detail.order;
+                this.busy = true;
+                try {
+                    let cart = null;
+                    try {
+                        const cartResult = await get('/api/cart/list');
+                        cart = (cartResult && cartResult.data) || null;
+                    } catch (e) {
+                        cart = null;
+                    }
+                    if (cart && !cart.isEmpty && cart.shopId !== order.shopId) {
+                        const tip = '购物车已有「' + (cart.shopName || '其他店铺') + '」的商品，再来一单将先清空当前购物车，是否继续？';
+                        if (!confirm(tip)) {
+                            return;
+                        }
+                        await post('/api/cart/clear', {});
+                    }
+                    const failed = [];
+                    let added = 0;
+                    for (const item of items) {
+                        try {
+                            await post('/api/cart/add', { dishId: item.dishId, quantity: item.quantity });
+                            added++;
+                        } catch (e) {
+                            failed.push((item.dishNameSnapshot || '菜品') + '（' + (e.message || '加购失败') + '）');
+                        }
+                    }
+                    if (added === 0) {
+                        this.showError('再来一单失败：' + failed.join('；'));
+                        return;
+                    }
+                    if (failed.length) {
+                        // 部分成功不自动跳转，留出阅读失败原因的时间，由用户自行决定下一步
+                        this.showError('已加入 ' + added + ' 项，以下菜品未能加购：' + failed.join('；'));
+                        return;
+                    }
+                    this.noticeType = 'success';
+                    this.notice = '已按原订单重新加入购物车，正在返回店铺…';
+                    setTimeout(() => { location.href = 'shop-detail.html?shopId=' + order.shopId; }, 800);
+                } catch (e) {
+                    this.showError(e.message || '再来一单失败');
+                } finally {
+                    this.busy = false;
+                }
+            },
+            /**
+             * 返回上一级列表：优先回退浏览历史（从哪个列表进来就回哪个），
+             * 无历史（直开链接/新标签）时按角色兜底到各自订单列表页。
+             */
+            backToList() {
+                if (history.length > 1) {
+                    history.back();
+                    return;
+                }
+                const role = this.user && this.user.role;
+                const page = ORDER_LIST_PAGES[role];
+                if (page) {
+                    location.href = page;
+                } else {
+                    goHome(role);
+                }
+            },
+            showError(message) {
+                this.noticeType = 'error';
+                this.notice = message;
+            }
+        },
+        async mounted() {
+            const user = await requireRole();
+            if (!user) {
+                return;
+            }
+            this.user = user;
+            const orderId = new URLSearchParams(location.search).get('orderId');
+            if (!orderId) {
+                this.showError('缺少订单参数');
+                return;
+            }
+            try {
+                const result = await get('/api/order/detail?orderId=' + encodeURIComponent(orderId));
+                this.detail = result.data;
+            } catch (e) {
+                this.showError(e.message || '订单详情加载失败');
+            }
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

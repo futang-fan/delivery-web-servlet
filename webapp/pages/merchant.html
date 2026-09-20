@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商家中心 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../libs/element-plus.css">
+    <link rel="stylesheet" href="../common/style.css">
+    <script src="../libs/echarts.min.js"></script>
+    <script type="importmap">
+    { "imports": { "vue": "../libs/vue.esm-browser.prod.js" } }
+    </script>
+</head>
+<body>
+<div id="app" v-cloak class="shell admin-layout">
+    <app-sidenav :user="user" active-href="merchant.html" brand="商家中心" logo="店"></app-sidenav>
+    <div class="admin-main">
+    <app-topbar :user="user" :show-nav="false" brand="商家中心"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">店</div>
+                <h1>商家中心</h1>
+                <p>入驻申请 · 店铺资料维护 · 营业状态</p>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <!-- 审核通过：营业状态切换 + 资料只读摘要，按需展开编辑表单防误改 -->
+            <template v-if="shop && shop.auditStatus === 'APPROVED'">
+                <div class="notice success">
+                    店铺已审核通过，{{ shop.businessStatus === 'OPEN' ? '当前营业中' : '当前休息中' }}
+                    <button class="btn" type="button" @click="toggleBusiness" :disabled="loading">
+                        {{ shop.businessStatus === 'OPEN' ? '切换为休息' : '切换为营业' }}
+                    </button>
+                </div>
+
+                <!-- 经营数据：时间筛选 + 核心指标 + 热销排行图表 -->
+                <div class="toolbar">
+                    <strong>经营数据</strong>
+                    <input id="stats-start" type="date" v-model="statsStart" aria-label="开始日期" @change="statsQuick = null">
+                    <input id="stats-end" type="date" v-model="statsEnd" aria-label="结束日期" @change="statsQuick = null">
+                    <span class="quick-range">
+                        <button type="button" :class="['btn', { active: statsQuick === 1 }]" @click="applyStatsQuick(1)" :disabled="loading">今日</button>
+                        <button type="button" :class="['btn', { active: statsQuick === 3 }]" @click="applyStatsQuick(3)" :disabled="loading">近3天</button>
+                        <button type="button" :class="['btn', { active: statsQuick === 7 }]" @click="applyStatsQuick(7)" :disabled="loading">近7天</button>
+                        <button type="button" :class="['btn', { active: statsQuick === 30 }]" @click="applyStatsQuick(30)" :disabled="loading">近30天</button>
+                    </span>
+                    <button class="btn primary" type="button" @click="loadStats" :disabled="loading">查询</button>
+                    <button class="btn" type="button" @click="exportCsv">导出 CSV</button>
+                </div>
+                <el-row :gutter="12" v-if="stats">
+                    <el-col :span="6">
+                        <el-card shadow="hover"><el-statistic title="订单数" :value="stats.orderCount"></el-statistic></el-card>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-card shadow="hover"><el-statistic title="完成订单" :value="stats.completedCount"></el-statistic></el-card>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-card shadow="hover"><el-statistic title="有效交易额" :value="Number(stats.validAmount)" :precision="2" prefix="¥"></el-statistic></el-card>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-card shadow="hover"><el-statistic title="退款金额" :value="Number(stats.refundAmount)" :precision="2" prefix="¥"></el-statistic></el-card>
+                    </el-col>
+                </el-row>
+                <div v-if="stats && stats.hotDishRank && stats.hotDishRank.length" ref="rankChart" class="rank-chart"></div>
+                <el-table v-if="stats" :data="stats.hotDishRank" size="small" stripe>
+                    <el-table-column type="index" label="#" width="50"></el-table-column>
+                    <el-table-column prop="name" label="热销菜品"></el-table-column>
+                    <el-table-column prop="sales" label="销量（件）" width="120"></el-table-column>
+                </el-table>
+
+                <div class="toolbar">
+                    <strong>店铺资料</strong>
+                    <button v-if="!showEdit" class="btn primary" type="button" @click="openEdit" :disabled="loading">编辑资料</button>
+                </div>
+                <div v-if="!showEdit" class="item-list">
+                    <div class="item-card">
+                        <div class="item-main">
+                            <div class="item-title">{{ shop.name }}</div>
+                            <div class="item-desc">联系电话：{{ shop.phone || '—' }}</div>
+                            <div class="item-desc">经营地址：{{ shop.address || '—' }}</div>
+                            <div class="item-desc">店铺简介：{{ shop.description || '暂无简介' }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <form v-else novalidate @submit.prevent="saveInfo" class="panel">
+                    <div class="panel-header">
+                        <strong>编辑店铺资料</strong>
+                        <button class="btn" type="button" @click="closeEdit" :disabled="loading">关闭</button>
+                    </div>
+                    <div class="field">
+                        <label for="s-name">店铺名称</label>
+                        <input id="s-name" v-model.trim="edit.name" type="text" maxlength="50">
+                    </div>
+                    <div class="field">
+                        <label for="s-phone">联系电话</label>
+                        <input id="s-phone" v-model.trim="edit.phone" type="tel" maxlength="11">
+                    </div>
+                    <div class="field">
+                        <label for="s-address">经营地址</label>
+                        <textarea id="s-address" v-model.trim="edit.address" maxlength="200"></textarea>
+                    </div>
+                    <div class="field">
+                        <label for="s-description">店铺简介</label>
+                        <textarea id="s-description" v-model.trim="edit.description" maxlength="500"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button class="submit" type="submit" :disabled="loading">{{ loading ? '保存中…' : '保存资料' }}</button>
+                    </div>
+                </form>
+            </template>
+
+            <!-- 待审核 / 已拒绝 / 未提交：入驻资料填写或整改 -->
+            <template v-else>
+                <div v-if="shop && shop.auditStatus === 'PENDING'" class="notice">
+                    入驻资料已提交，等待管理员审核。
+                </div>
+                <div v-else-if="shop && shop.auditStatus === 'REJECTED'" class="notice error">
+                    入驻申请被拒绝：{{ shop.auditReason }}。请修改资料后重新提交。
+                </div>
+
+                <form novalidate @submit.prevent="submit">
+                    <div class="field">
+                        <label for="m-name">店铺名称</label>
+                        <input id="m-name" v-model.trim="form.name" type="text" maxlength="50"
+                               placeholder="2-50 个字符，真实店铺名称">
+                    </div>
+                    <div class="field">
+                        <label for="m-contact">联系人</label>
+                        <input id="m-contact" v-model.trim="form.contact" type="text" maxlength="50"
+                               placeholder="商家负责人真实姓名">
+                    </div>
+                    <div class="field">
+                        <label for="m-phone">联系电话</label>
+                        <input id="m-phone" v-model.trim="form.phone" type="tel" maxlength="11" autocomplete="tel"
+                               placeholder="请输入 11 位手机号">
+                    </div>
+                    <div class="field">
+                        <label for="m-address">经营地址</label>
+                        <textarea id="m-address" v-model.trim="form.address" maxlength="200"
+                                  placeholder="详细经营地址，兼作骑手取餐地址"></textarea>
+                    </div>
+                    <div class="field">
+                        <label for="m-qualification">资质说明</label>
+                        <textarea id="m-qualification" v-model.trim="form.qualification" maxlength="500"
+                                  placeholder="经营资质情况描述，供管理员审核参考"></textarea>
+                    </div>
+                    <button class="submit" type="submit" :disabled="loading">
+                        {{ loading ? '提交中…' : submitText }}
+                    </button>
+                </form>
+            </template>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+    </div>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import ElementPlus from '../libs/element-plus.full.mjs';
+    import { installShell, get, post, requireRole, CTX, quickRange } from '../common/common.js';
+
+    // 经营数据日期查询默认当天（避免空值显示 yyyy/mm/dd 占位）
+    const todayStr = () => {
+        const d = new Date();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + m + '-' + day;
+    };
+
+    const app = createApp({
+        data() {
+            return {
+                shop: null,
+                statsQuick: null,
+                loading: false,
+                showEdit: false,
+                notice: '',
+                noticeType: 'error',
+                edit: { name: '', description: '', phone: '', address: '' },
+                form: { name: '', contact: '', phone: '', address: '', qualification: '' },
+                statsStart: todayStr(),
+                statsEnd: todayStr(),
+                stats: null,
+                user: null
+            };
+        },
+        computed: {
+            submitText() {
+                if (!this.shop || !this.shop.auditStatus) return '提交入驻申请';
+                if (this.shop.auditStatus === 'REJECTED') return '重新提交申请';
+                return '更新入驻资料';
+            }
+        },
+        methods: {
+            showError(m) { this.noticeType = 'error'; this.notice = m; },
+            showSuccess(m) { this.noticeType = 'success'; this.notice = m; },
+            async loadShop() {
+                this.loading = true;
+                try {
+                    const result = await get('/api/shop/my');
+                    this.shop = (result && result.data) || null;
+                    this.fillForm();
+                    this.fillEdit();
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            openEdit() {
+                this.fillEdit();
+                this.showEdit = true;
+                this.notice = '';
+            },
+            closeEdit() {
+                this.showEdit = false;
+                this.notice = '';
+            },
+            fillForm() {
+                const s = this.shop;
+                this.form.name = (s && s.name) || '';
+                this.form.contact = (s && s.contact) || '';
+                this.form.phone = (s && s.phone) || '';
+                this.form.address = (s && s.address) || '';
+                this.form.qualification = (s && s.qualification) || '';
+            },
+            fillEdit() {
+                const s = this.shop;
+                this.edit.name = (s && s.name) || '';
+                this.edit.description = (s && s.description) || '';
+                this.edit.phone = (s && s.phone) || '';
+                this.edit.address = (s && s.address) || '';
+            },
+            async submit() {
+                const f = this.form;
+                if (f.name.length < 2 || f.name.length > 50) { this.showError('店铺名称须为 2-50 个字符'); return; }
+                if (!f.contact) { this.showError('请填写联系人姓名'); return; }
+                if (!/^\d{11}$/.test(f.phone)) { this.showError('请输入11位手机号'); return; }
+                if (!f.address) { this.showError('请填写经营地址'); return; }
+                if (!f.qualification) { this.showError('请填写资质说明'); return; }
+                this.loading = true;
+                try {
+                    await post('/api/shop/apply', f);
+                    this.showSuccess('提交成功，等待管理员审核');
+                    await this.loadShop();
+                } catch (e) {
+                    this.showError(e.message || '提交失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async saveInfo() {
+                const e = this.edit;
+                if (e.name.length < 2 || e.name.length > 50) { this.showError('店铺名称须为 2-50 个字符'); return; }
+                if (!/^\d{11}$/.test(e.phone)) { this.showError('请输入11位手机号'); return; }
+                if (!e.address) { this.showError('请填写经营地址'); return; }
+                this.loading = true;
+                try {
+                    await post('/api/shop/update', e);
+                    this.showEdit = false;
+                    this.showSuccess('保存成功');
+                    await this.loadShop();
+                } catch (e2) {
+                    this.showError(e2.message || '保存失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            async toggleBusiness() {
+                this.loading = true;
+                try {
+                    const target = this.shop.businessStatus === 'OPEN' ? 'CLOSED' : 'OPEN';
+                    await post('/api/shop/business-status', { businessStatus: target });
+                    this.showSuccess('已切换营业状态');
+                    await this.loadShop();
+                } catch (e) {
+                    this.showError(e.message || '切换失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            applyStatsQuick(days) {
+                const range = quickRange(days);
+                if (!range) return;
+                this.statsQuick = days;
+                this.statsStart = range.start;
+                this.statsEnd = range.end;
+                this.loadStats();
+            },
+            async loadStats() {
+                try {
+                    const params = new URLSearchParams();
+                    if (this.statsStart) params.set('startDate', this.statsStart);
+                    if (this.statsEnd) params.set('endDate', this.statsEnd);
+                    const result = await get('/api/shop/stats?' + params.toString());
+                    this.stats = (result && result.data) || null;
+                    this.$nextTick(() => this.renderChart());
+                } catch (e) {
+                    this.showError(e.message || '经营数据加载失败');
+                }
+            },
+            /** B6：按当前日期区间导出经营数据 CSV（服务端直写 text/csv + BOM） */
+            exportCsv() {
+                const params = new URLSearchParams();
+                if (this.statsStart) params.set('startDate', this.statsStart);
+                if (this.statsEnd) params.set('endDate', this.statsEnd);
+                const qs = params.toString();
+                location.href = CTX + '/api/shop/stats/export' + (qs ? '?' + qs : '');
+            },
+            renderChart() {
+                if (!this.stats || !this.stats.hotDishRank || !this.stats.hotDishRank.length) return;
+                const el = this.$refs.rankChart;
+                if (!el || typeof echarts === 'undefined') return;
+                // 取已有实例或新建，避免反复点“查询”时重复 init 报警
+                const chart = echarts.getInstanceByDom(el) || echarts.init(el);
+                const names = this.stats.hotDishRank.map(h => h.name);
+                const sales = this.stats.hotDishRank.map(h => Number(h.sales));
+                // 图表文字色跟随亮/暗主题；柱色回归主题蓝（早期暖橙方案已废弃）
+                const color = this.dark ? '#9fb0c7' : '#4b5a70';
+                chart.setOption({
+                    title: { text: '热销菜品 TOP5', left: 'center', textStyle: { fontSize: 13, color: color } },
+                    tooltip: { trigger: 'axis' },
+                    grid: { left: 40, right: 20, top: 40, bottom: 30 },
+                    xAxis: { type: 'category', data: names, axisLabel: { interval: 0, fontSize: 11, color: color } },
+                    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: color } },
+                    series: [{ type: 'bar', data: sales, itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] } }]
+                }, true);
+            }
+        },
+        watch: {
+            // 主题切换后重画图表，文字色才能跟随亮/暗
+            dark() { this.$nextTick(() => this.renderChart()); }
+        },
+        async mounted() {
+            const user = await requireRole('SHOP');
+            if (!user) return;
+            this.user = user;
+            this.loadShop();
+            this.loadStats();
+        }
+    });
+    installShell(app);
+    app.use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>

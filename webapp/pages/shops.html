@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>店铺列表 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body>
+<div id="app" v-cloak class="shell">
+    <app-topbar :user="user" active-href="shops.html" :show-brand="true" brand="外卖配送平台" logo="送" brand-href="shops.html"></app-topbar>
+    <main class="page">
+        <section class="card">
+            <div class="brand">
+                <div class="logo">逛</div>
+                <h1>附近好店</h1>
+                <p>输入店名或菜名，开始点餐</p>
+            </div>
+
+            <div class="toolbar">
+                <input id="shop-keyword" v-model.trim="keyword" @keyup.enter="search"
+                       type="text" maxlength="50" placeholder="搜索店名或菜品名">
+                <select id="business-status" v-model="businessStatus" @change="search">
+                    <option value="">全部状态</option>
+                    <option value="OPEN">营业中</option>
+                    <option value="CLOSED">休息中</option>
+                </select>
+                <select id="shop-sort" v-model="sort" @change="search">
+                    <option value="">默认排序</option>
+                    <option value="RATING">评分优先</option>
+                    <option value="SALES">销量优先</option>
+                </select>
+                <button class="btn primary" type="button" @click="search" :disabled="loading">搜索</button>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div class="item-list" v-if="shops.length">
+                <div v-for="s in shops" :key="s.id" class="item-card" @click="openShop(s)">
+                    <div class="logo-mini">🍽</div>
+                    <div class="item-main">
+                        <div class="item-title">
+                            {{ s.name }}
+                            <span class="badge" :class="{ success: s.businessStatus === 'OPEN' }">
+                                {{ bizText(s) }}
+                            </span>
+                            <span v-if="Number(s.reviewCount) > 0" class="shop-rating">
+                                ★ {{ Number(s.avgRating).toFixed(1) }}（{{ s.reviewCount }}）
+                            </span>
+                        </div>
+                        <div class="item-desc">{{ s.description || '商家还没有填写简介' }}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-else-if="!loading" class="empty">没有符合条件的店铺</div>
+
+            <div class="pager" v-if="total > 0">
+                <button class="btn" type="button" @click="turn(page - 1)" :disabled="page <= 1 || loading">上一页</button>
+                <span>第 {{ page }} / {{ pages }} 页 · 共 {{ total }} 家</span>
+                <button class="btn" type="button" @click="turn(page + 1)" :disabled="page >= pages || loading">下一页</button>
+            </div>
+
+            <div class="field">
+                <label>跨店菜品搜索</label>
+            </div>
+            <div class="toolbar">
+                <input id="dish-keyword" v-model.trim="dishKeyword" @keyup.enter="searchDish"
+                       type="text" maxlength="50" placeholder="搜索菜品名或店铺名">
+                <button class="btn primary" type="button" @click="searchDish" :disabled="loading">搜菜品</button>
+            </div>
+
+            <div class="item-list" v-if="dishes.length">
+                <div v-for="d in dishes" :key="d.id" class="item-card" @click="openShopById(d.shopId)">
+                    <div class="logo-mini">🍜</div>
+                    <div class="item-main">
+                        <div class="item-title">
+                            {{ d.name }}
+                            <span class="badge" :class="{ success: d.businessStatus === 'OPEN' }">
+                                {{ bizText(d) }}
+                            </span>
+                            <span v-if="isHot(d)" class="badge hot">热销</span>
+                        </div>
+                        <div class="item-desc">{{ d.shopName }}　￥{{ d.price }}　库存 {{ d.stock }}</div>
+                    </div>
+                </div>
+            </div>
+            <div v-else-if="dishSearched && !loading" class="empty">没有符合条件的在售菜品</div>
+
+            <div class="pager" v-if="dishTotal > 0">
+                <button class="btn" type="button" @click="turnDish(dishPage - 1)" :disabled="dishPage <= 1 || loading">上一页</button>
+                <span>第 {{ dishPage }} / {{ dishPages }} 页 · 共 {{ dishTotal }} 道</span>
+                <button class="btn" type="button" @click="turnDish(dishPage + 1)" :disabled="dishPage >= dishPages || loading">下一页</button>
+            </div>
+
+            <div class="footer">DeliveryWeb</div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { installShell, get, label, BUSINESS_STATUS_TEXT, requireRole } from '../common/common.js';
+
+    const app = createApp({
+        data() {
+            return {
+                keyword: '',
+                businessStatus: '',
+                sort: '',
+                page: 1,
+                size: 10,
+                total: 0,
+                pages: 0,
+                shops: [],
+                dishes: [],
+                dishKeyword: '',
+                dishPage: 1,
+                dishSize: 10,
+                dishTotal: 0,
+                dishPages: 0,
+                dishSearched: false,
+                loading: true,
+                notice: '',
+                noticeType: 'error',
+                user: null
+            };
+        },
+        computed: {
+            /** 热销口径：当前列表内销量降序前 20%（至少 1 道）且有实际销量 */
+            hotDishIds() {
+                const ranked = this.dishes
+                    .filter(d => Number(d.salesCount) > 0)
+                    .slice()
+                    .sort((a, b) => Number(b.salesCount) - Number(a.salesCount));
+                const take = Math.max(1, Math.ceil(this.dishes.length * 0.2));
+                return new Set(ranked.slice(0, take).map(d => d.id));
+            }
+        },
+        methods: {
+            isHot(dish) {
+                return this.hotDishIds.has(dish.id);
+            },
+            showError(message) {
+                this.noticeType = 'error';
+                this.notice = message;
+            },
+            bizText(shop) {
+                return label(BUSINESS_STATUS_TEXT, shop.businessStatus);
+            },
+            async load() {
+                this.loading = true;
+                this.notice = '';
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.page);
+                    params.set('size', this.size);
+                    if (this.keyword) params.set('keyword', this.keyword);
+                    if (this.businessStatus) params.set('businessStatus', this.businessStatus);
+                    if (this.sort) params.set('sort', this.sort);
+                    const result = await get('/api/shop/list?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.shops = data.records || [];
+                    this.total = Number(data.total) || 0;
+                    this.pages = Number(data.pages) || 0;
+                } catch (e) {
+                    this.showError(e.message || '加载失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            search() {
+                this.page = 1;
+                this.load();
+            },
+            turn(page) {
+                this.page = page;
+                this.load();
+            },
+            openShop(shop) {
+                location.href = 'shop-detail.html?shopId=' + shop.id;
+            },
+            openShopById(shopId) {
+                location.href = 'shop-detail.html?shopId=' + shopId;
+            },
+            async loadDishes() {
+                this.loading = true;
+                try {
+                    const params = new URLSearchParams();
+                    params.set('page', this.dishPage);
+                    params.set('size', this.dishSize);
+                    if (this.dishKeyword) params.set('keyword', this.dishKeyword);
+                    const result = await get('/api/dish/search?' + params.toString());
+                    const data = (result && result.data) || {};
+                    this.dishes = data.records || [];
+                    this.dishTotal = Number(data.total) || 0;
+                    this.dishPages = Number(data.pages) || 0;
+                    this.dishSearched = true;
+                } catch (e) {
+                    this.showError(e.message || '菜品搜索失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+            searchDish() {
+                this.dishPage = 1;
+                this.loadDishes();
+            },
+            turnDish(page) {
+                this.dishPage = page;
+                this.loadDishes();
+            }
+        },
+        async mounted() {
+            const user = await requireRole('CUSTOMER');
+            if (!user) return;
+            this.user = user;
+            this.load();
+        }
+    });
+    installShell(app);
+    app.mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录注册 - 在线外卖点餐与配送调度平台</title>
+    <link rel="preload" href="../libs/vue.esm-browser.prod.js" as="script" crossorigin>
+    <link rel="preload" href="../common/common.js" as="script" crossorigin>
+    <link rel="stylesheet" href="../common/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <main class="page auth-page">
+        <section class="card auth-card">
+            <aside class="auth-aside">
+                <button class="theme-toggle" type="button"
+                        :title="dark ? '切换亮色' : '切换暗色'"
+                        @click="toggleTheme">{{ dark ? '☀️' : '🌙' }}</button>
+                <div class="auth-aside-inner">
+                    <div class="logo">外卖</div>
+                    <h1>在线外卖点餐与配送调度平台</h1>
+                    <p>点餐 · 经营 · 配送 · 管理，一站式协同</p>
+                    <ul class="auth-feats">
+                        <li>🍚 顾客浏览店铺在线点餐</li>
+                        <li>🏪 商家管理菜品与订单</li>
+                        <li>🛵 骑手抢单派送实时调度</li>
+                        <li>🛡️ 管理员审核商家监管平台</li>
+                    </ul>
+                </div>
+            </aside>
+            <!-- 移动端主题切换：品牌面板隐藏后，卡片右上角补一枚仅窄屏显示的切换按钮 -->
+            <button class="theme-toggle auth-theme-mobile" type="button"
+                    :title="dark ? '切换亮色' : '切换暗色'"
+                    @click="toggleTheme">{{ dark ? "☀️" : "🌙" }}</button>
+            <div class="auth-main">
+            <div class="tabs">
+                <button type="button"
+                        :class="['tab', { active: view === 'login' }]"
+                        @click="switchView('login')">登 录</button>
+                <button type="button"
+                        :class="['tab', { active: view === 'register' }]"
+                        @click="switchView('register')">注 册</button>
+            </div>
+
+            <div v-if="notice" :class="['notice', noticeType]">{{ notice }}</div>
+
+            <div class="auth-body">
+            <!-- 登录 -->
+            <form v-if="view === 'login'" novalidate @submit.prevent="handleLogin">
+                <div class="field">
+                    <label for="login-username">用户名</label>
+                    <input id="login-username"
+                           v-model.trim="loginForm.username"
+                           type="text"
+                           maxlength="50"
+                           autocomplete="username"
+                           placeholder="请输入用户名">
+                </div>
+                <div class="field">
+                    <label for="login-password">密码</label>
+                    <input id="login-password"
+                           v-model="loginForm.password"
+                           type="password"
+                           maxlength="100"
+                           autocomplete="current-password"
+                           placeholder="请输入密码">
+                </div>
+                <p class="tip">骑手账号由管理员创建，不开放注册；顾客、商家、骑手、管理员均使用本入口登录。</p>
+                <button class="link-btn" type="button" @click="switchView('forgot')">忘记密码？</button>
+                <button class="submit" type="submit" :disabled="loading">
+                    {{ loading ? '登录中…' : '登 录' }}
+                </button>
+            </form>
+
+            <!-- 注册 -->
+            <form v-else-if="view === 'register'" novalidate @submit.prevent="handleRegister">
+                <div class="field">
+                    <label>注册角色</label>
+                    <div class="roles">
+                        <div v-for="r in registerRoles"
+                             :key="r.value"
+                             class="role-card"
+                             :class="{ active: regForm.role === r.value }"
+                             role="radio"
+                             :aria-checked="regForm.role === r.value"
+                             @click="regForm.role = r.value">
+                            <span class="role-icon">{{ r.icon }}</span>
+                            <strong>{{ r.label }}</strong>
+                            <small>{{ r.desc }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="reg-username">用户名</label>
+                    <input id="reg-username"
+                           v-model.trim="regForm.username"
+                           type="text"
+                           maxlength="16"
+                           autocomplete="username"
+                           placeholder="4-16 位字母、数字或下划线">
+                </div>
+
+                <div class="field">
+                    <label for="reg-phone">手机号</label>
+                    <input id="reg-phone"
+                           v-model.trim="regForm.phone"
+                           type="tel"
+                           maxlength="11"
+                           autocomplete="tel"
+                           placeholder="请输入 11 位手机号">
+                </div>
+
+                <div class="field">
+                    <label for="reg-password">密码</label>
+                    <input id="reg-password"
+                           v-model="regForm.password"
+                           type="password"
+                           maxlength="100"
+                           autocomplete="new-password"
+                           placeholder="至少 6 位">
+                </div>
+
+                <div class="field">
+                    <label for="reg-confirm">确认密码</label>
+                    <input id="reg-confirm"
+                           v-model="regForm.confirmPassword"
+                           type="password"
+                           maxlength="100"
+                           autocomplete="new-password"
+                           placeholder="再次输入密码">
+                </div>
+
+                <button class="submit" type="submit" :disabled="loading">
+                    {{ loading ? '提交中…' : '注 册' }}
+                </button>
+            </form>
+
+            <!-- 忘记密码：两步式（① 提交找回申请 → ② 凭管理员下发的一次性验证码重置） -->
+            <template v-else-if="view === 'forgot'">
+                <form v-if="forgotStep === 1" novalidate @submit.prevent="handleForgotRequest">
+                    <div class="field">
+                        <label for="forgot-username">用户名</label>
+                        <input id="forgot-username"
+                               v-model.trim="forgotForm.username"
+                               type="text"
+                               maxlength="50"
+                               autocomplete="username"
+                               placeholder="请输入用户名">
+                    </div>
+                    <div class="field">
+                        <label for="forgot-phone">注册手机号</label>
+                        <input id="forgot-phone"
+                               v-model.trim="forgotForm.phone"
+                               type="tel"
+                               maxlength="11"
+                               autocomplete="tel"
+                               placeholder="请输入 11 位注册手机号">
+                    </div>
+                    <p class="tip">提交后由管理员核实身份并下发一次性验证码，请线下联系管理员获取。</p>
+                    <button class="submit" type="submit" :disabled="loading">
+                        {{ loading ? '提交中…' : '提交申请' }}
+                    </button>
+                    <button class="link-btn" type="button" @click="switchView('login')">返回登录</button>
+                </form>
+                <form v-else novalidate @submit.prevent="handleForgotReset">
+                    <div class="field">
+                        <label>用户名</label>
+                        <input type="text" :value="forgotForm.username" disabled>
+                    </div>
+                    <div class="field">
+                        <label for="forgot-code">验证码</label>
+                        <input id="forgot-code"
+                               v-model.trim="forgotForm.code"
+                               type="text"
+                               maxlength="6"
+                               inputmode="numeric"
+                               placeholder="请输入 6 位验证码">
+                    </div>
+                    <div class="field">
+                        <label for="forgot-password">新密码</label>
+                        <input id="forgot-password"
+                               v-model="forgotForm.password"
+                               type="password"
+                               maxlength="100"
+                               autocomplete="new-password"
+                               placeholder="至少 6 位">
+                    </div>
+                    <div class="field">
+                        <label for="forgot-confirm">确认新密码</label>
+                        <input id="forgot-confirm"
+                               v-model="forgotForm.confirmPassword"
+                               type="password"
+                               maxlength="100"
+                               autocomplete="new-password"
+                               placeholder="再次输入新密码">
+                    </div>
+                    <p class="tip">验证码由管理员审批申请后下发，5 分钟内有效、仅可使用一次。</p>
+                    <button class="submit" type="submit" :disabled="loading">
+                        {{ loading ? '提交中…' : '重置密码' }}
+                    </button>
+                    <button class="link-btn" type="button" @click="forgotStep = 1">上一步</button>
+                </form>
+            </template>
+
+            </div>
+
+            <div class="footer">DeliveryWeb</div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script type="module">
+    import { createApp } from '../libs/vue.esm-browser.prod.js';
+    import { get, post, goHome, HOME_PAGES, setCachedUser, toggleTheme as toggleThemeApi, currentTheme } from '../common/common.js';
+
+    const USERNAME_RE = /^[A-Za-z0-9_]{4,16}$/;
+    const PHONE_RE = /^\d{11}$/;
+    const CODE_RE = /^\d{6}$/;
+
+    createApp({
+        data() {
+            return {
+                view: 'login',
+                loading: false,
+                dark: currentTheme() === 'dark',
+                notice: '',
+                noticeType: 'error',
+                loginForm: {
+                    username: '',
+                    password: ''
+                },
+                forgotForm: {
+                    username: '',
+                    phone: '',
+                    code: '',
+                    password: '',
+                    confirmPassword: ''
+                },
+                forgotStep: 1,
+                regForm: {
+                    role: 'CUSTOMER',
+                    username: '',
+                    phone: '',
+                    password: '',
+                    confirmPassword: ''
+                },
+                registerRoles: [
+                    { value: 'CUSTOMER', icon: '🍚', label: '顾客', desc: '浏览点餐' },
+                    { value: 'SHOP', icon: '🏪', label: '商家', desc: '开店经营' }
+                ]
+            };
+        },
+        methods: {
+            switchView(view) {
+                if (view === 'forgot') {
+                    this.forgotStep = 1;
+                    this.forgotForm.code = '';
+                    this.forgotForm.password = '';
+                    this.forgotForm.confirmPassword = '';
+                }
+                this.view = view;
+                this.clearNotice();
+            },
+
+            toggleTheme() {
+                this.dark = toggleThemeApi();
+            },
+
+            clearNotice() {
+                this.notice = '';
+                this.noticeType = 'error';
+            },
+
+            showError(message) {
+                this.noticeType = 'error';
+                this.notice = message;
+            },
+
+            showSuccess(message) {
+                this.noticeType = 'success';
+                this.notice = message;
+            },
+
+            async handleLogin() {
+                this.clearNotice();
+
+                const username = this.loginForm.username.trim();
+                const password = this.loginForm.password;
+                if (!username) {
+                    this.showError('请输入用户名');
+                    return;
+                }
+                if (!password) {
+                    this.showError('请输入密码');
+                    return;
+                }
+
+                this.loading = true;
+                try {
+                    const result = await post('/api/auth/login', { username, password });
+                    const user = (result && result.data) || {};
+                    const role = user.role;
+                    if (!HOME_PAGES[role]) {
+                        throw new Error('登录成功但未获取到有效的角色信息');
+                    }
+                    setCachedUser(user);
+                    this.showSuccess('登录成功，正在跳转…');
+                    setTimeout(() => goHome(role), 600);
+                } catch (e) {
+                    this.showError(e.message || '登录失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async handleRegister() {
+                this.clearNotice();
+
+                const f = this.regForm;
+                const username = f.username.trim();
+                const phone = f.phone.trim();
+
+                if (!USERNAME_RE.test(username)) {
+                    this.showError('用户名须为 4-16 位字母、数字或下划线');
+                    return;
+                }
+                if (!PHONE_RE.test(phone)) {
+                    this.showError('请输入11位手机号');
+                    return;
+                }
+                if (!f.password || f.password.length < 6) {
+                    this.showError('密码长度不能少于 6 位');
+                    return;
+                }
+                if (f.password !== f.confirmPassword) {
+                    this.showError('两次输入的密码不一致');
+                    return;
+                }
+                if (!f.role) {
+                    this.showError('请选择注册角色');
+                    return;
+                }
+
+                this.loading = true;
+                try {
+                    await post('/api/auth/register', {
+                        username,
+                        password: f.password,
+                        phone,
+                        role: f.role
+                    });
+
+                    this.view = 'login';
+                    this.loginForm.username = username;
+                    this.loginForm.password = '';
+                    const successMsg = f.role === 'SHOP'
+                        ? '注册成功，请登录后继续完成商家入驻'
+                        : '注册成功，请登录';
+                    this.showSuccess(successMsg);
+                } catch (e) {
+                    this.showError(e.message || '注册失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async handleForgotRequest() {
+                this.clearNotice();
+
+                const f = this.forgotForm;
+                const username = f.username.trim();
+                const phone = f.phone.trim();
+                if (!username) {
+                    this.showError('请输入用户名');
+                    return;
+                }
+                if (!PHONE_RE.test(phone)) {
+                    this.showError('请输入11位手机号');
+                    return;
+                }
+
+                this.loading = true;
+                try {
+                    await post('/api/auth/reset-request', { username, phone });
+                    this.forgotStep = 2;
+                    this.showSuccess('申请已提交，请线下联系管理员获取验证码');
+                } catch (e) {
+                    this.showError(e.message || '提交失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async handleForgotReset() {
+                this.clearNotice();
+
+                const f = this.forgotForm;
+                const username = f.username.trim();
+                const code = f.code.trim();
+                if (!CODE_RE.test(code)) {
+                    this.showError('请输入 6 位数字验证码');
+                    return;
+                }
+                if (!f.password || f.password.length < 6) {
+                    this.showError('密码长度不能少于 6 位');
+                    return;
+                }
+                if (f.password !== f.confirmPassword) {
+                    this.showError('两次输入的密码不一致');
+                    return;
+                }
+
+                this.loading = true;
+                try {
+                    await post('/api/auth/reset-password', {
+                        username,
+                        code,
+                        newPassword: f.password
+                    });
+                    this.view = 'login';
+                    this.forgotStep = 1;
+                    this.loginForm.username = username;
+                    this.loginForm.password = '';
+                    this.showSuccess('密码重置成功，请使用新密码登录');
+                } catch (e) {
+                    this.showError(e.message || '重置失败');
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async checkLoggedIn() {
+                try {
+                    const result = await get('/api/auth/current');
+                    const user = (result && result.data) || {};
+                    goHome(user.role);
+                } catch (e) {
+                    // 未登录或接口暂不可用时停留在登录页
+                }
+            }
+        },
+        mounted() {
+            this.checkLoggedIn();
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

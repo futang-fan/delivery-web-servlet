@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 上下文配置：Session Cookie 加 SameSite=Lax（缓解 CSRF；Tomcat 9.0.12+ 支持 sameSiteCookies 属性）。
+     HttpOnly 由 web.xml 的 cookie-config 显式声明，此处仅补 Servlet 4.0 规范未覆盖的 SameSite。 -->
+<Context>
+    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
+                     sameSiteCookies="lax"/>
+</Context>
