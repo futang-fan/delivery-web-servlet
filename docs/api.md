@@ -12,7 +12,7 @@
   - `401` 未登录或会话过期（AuthFilter 返回，前端 common.js 收到后自动跳登录页）；
   - `403` 已登录但角色不允许（AuthFilter 返回）；
   - `404` 接口不存在。`/api/**` 已注册前缀下的未知子路径统一为 HTTP 200 + 业务 fail("接口不存在")；仅未匹配任何 Servlet 的请求或静态资源缺失时返回 HTTP 404，并经 web.xml error-page 回落 `pages/error.html` 友好错误页（`500`/未捕获异常同此兜底，不再暴露 Tomcat 默认错误页）。【编码同步 2026-09-12】【2026-09-13】错误页自 webapp 根目录迁至 `pages/error.html`：PageAuthFilter 未声明 dispatcherTypes（默认仅拦 REQUEST 分发），容器 error-page 走 ERROR 分发不受其登录守卫影响；页内资源按“上下文路径+绝对路径”注入，避免错误转发下相对路径失配。
-- **鉴权**：`/api/auth/**` 公开；其余 `/api/**` 必须登录（AuthFilter 默认拦截）；`/api/admin/**` 仅 ADMIN。归属类细分校验（本人订单、本店菜品等）在各 Service 内实现。
+- **鉴权**：公开账户接口仅 POST login/register/logout/reset-request/reset-password 与 GET current；其余 `/api/**` 必须持有效会话，`/api/admin/**` 仅 ADMIN。账户资料维护、业务接口和页面入口统一检查账号状态与认证版本。禁用、改密及密码重置成功提交后撤销目标账号全部会话；重新启用不恢复旧会话。该机制保持原有单 Tomcat Session 设计，不修改数据库表结构。归属类细分校验仍在各 Service 内实现。
 - **分页**：请求参数 `page`（默认 1）、`size`（默认 10，上限 50）；响应 data 为 `Page` 对象：`{page, size, total, pages, records}`。
 - **枚举取值**：一律使用 Constants / common.js 字典（设计书表 2.16）。角色 `CUSTOMER/SHOP/RIDER/ADMIN`；订单状态 `UNPAID/PENDING_ACCEPT/PREPARING/PENDING_DELIVERY/DELIVERING/DELIVERED/COMPLETED/CANCELLED/REJECTED`；支付状态 `UNPAID/PAID/REFUNDED`；配送状态 `PENDING/ACCEPTED/PICKED/DELIVERING/DELIVERED`；审核状态 `PENDING/APPROVED/REJECTED`；营业状态 `OPEN/CLOSED`。
 
@@ -23,11 +23,11 @@
 | /api/auth/register | POST | 公开 | body: username, password, phone, role(CUSTOMER/SHOP) | null | 用户名 4-16 位字母数字下划线；密码≥6 位；手机号 11 位；角色仅顾客/商家；重复提示"用户名已存在"/"手机号已被注册"。SHOP 注册成功后自动生成待审核店铺记录（UserService 内） |
 | /api/auth/login | POST | 公开 | body: username, password | `{id, username, role, phone, status}` | 错误统一"用户名或密码错误"（防枚举）；DISABLED 账号拒绝登录；成功建立 Session（30 分钟） |
 | /api/auth/logout | POST | 放行 | - | null | 销毁 Session |
-| /api/auth/current | GET | 公开 | - | 同 login 的用户对象（含 orderTimeoutMinutes） | 未登录返回 code=400"未登录"（HTTP 200）；orderTimeoutMinutes 为前端倒计时阈值单源下发（2026-09-12） |
-| /api/auth/change-password | POST | 登录 | body: oldPassword, newPassword | null | ✅ 旧密码验证后修改；成功后销毁当前 Session 需重新登录；/api/auth 前缀被 AuthFilter 放行，登录态在 Servlet 内校验 |
+| /api/auth/current | GET | 公开 | - | 同 login 的用户对象（含 orderTimeoutMinutes） | 有效会话返回最新用户资料；未登录或已撤销的会话仍按原约定返回 code=400"未登录"（HTTP 200），不返回旧用户资料；orderTimeoutMinutes 为前端倒计时阈值单源下发 |
+| /api/auth/change-password | POST | 有效登录 | body: oldPassword, newPassword | null | 旧密码验证后条件更新，避免并发修改覆盖已更新密码；成功提交后撤销该账号所有会话，当前及其他设备均须重新登录；失败不撤销会话 |
 | /api/auth/reset-request | POST | 公开 | body: username, phone | null | ✅ 忘记密码第一步（管理员协助找回，2026-09-12）：用户名+注册手机号匹配才受理，不匹配统一提示防枚举；同一用户 60 秒冷却；申请存内存 10 分钟过期 |
-| /api/auth/reset-password | POST | 公开 | body: username, code, newPassword | null | ✅ 忘记密码第二步：凭管理员审批后下发的一次性验证码重置；验证码 5 分钟有效、错 5 次作废、一次性使用；成功后需重新登录 |
-| /api/auth/update-profile | POST | 登录 | body: phone | 更新后的用户对象 | ✅ 修改手机号：11 位+未被其他账号占用；成功后同步刷新 Session 内手机号（不强制重登）；/api/auth 前缀放行，登录态在 Servlet 内校验 |
+| /api/auth/reset-password | POST | 公开 | body: username, code, newPassword | null | 原管理员审批与验证码规则不变；成功提交后撤销目标账号全部会话，匿名重置也生效；失败不撤销会话 |
+| /api/auth/update-profile | POST | 有效登录 | body: phone | 更新后的用户对象 | 手机号11位且未被其他账号占用；成功刷新现有会话资料、不重新建立会话或签发认证版本；改手机号不强制重登；禁用或已撤销的会话返回401 |
 
 ## 2. ShopServlet — /api/shop/**（✅ 全部接口）
 
@@ -49,7 +49,7 @@
 
 | 接口 | 方法 | 角色 | 入参 | 出参 data | 说明 / 主要错误 |
 |---|---|---|---|---|---|
-| /api/dish/save | POST | SHOP（本店） | body: id?, name(1-50字,同店唯一), price(正数,两位小数), stock(非负整数), imageUrl?, description(≤200字)? | {id} | ✅ 菜品新增/修改（设计书表 2.4）；id 有值为修改；新增默认 OFF_SALE；仅审核通过店铺可操作 |
+| /api/dish/save | POST | SHOP（本店） | body: id?, name(1-50字,同店唯一), price(正数,两位小数), stock?, originalStock?, imageUrl?, description(≤200字)? | null | 新增必填 stock（非负整数），默认 OFF_SALE；修改时 stock 缺省/null 只保存资料并保留实时库存；主动调整库存须同时提供 stock 与 originalStock（打开编辑页时的原库存），原库存不匹配则整次保存拒绝，刷新后重试；仅审核通过店铺可操作 |
 | /api/dish/status | POST | SHOP（本店） | body: id, status(ON_SALE/OFF_SALE) | null | ✅ 上下架切换；下架即软删除，可重新上架 |
 | /api/dish/my | GET | SHOP | - | List\<Dish\>（含下架） | ✅ 本店全部菜品（P08），归属校验，店铺须审核通过 |
 | /api/dish/list | GET | 登录 | query: shopId | List\<Dish\>（仅上架，含 salesCount） | ✅ 店铺在售菜品（P03），顾客浏览用；salesCount=近 30 天已支付销量件数（左连接聚合，无销量为 0），供前端热销标 |
@@ -78,9 +78,9 @@
 
 | 接口 | 方法 | 角色 | 入参 | 出参 data | 说明 / 主要错误 |
 |---|---|---|---|---|---|
-| /api/order/token | GET | CUSTOMER | - | {token} | ✅ 幂等令牌：Session 保存，创建订单时校验并销毁；重复签发以最后一次为准 |
+| /api/order/token | GET | CUSTOMER | - | {token} | Session 保存，创建订单时原子校验并消费；重复签发以最后一次为准；错误令牌不销毁有效令牌；同一会话下单与购物车操作串行执行（单实例保证） |
 | /api/order/create | POST | CUSTOMER | body: addressId, remark(≤100字)?, token | {orderId, orderNo} | ✅ 下单（设计书 2.2.4 + 表 2.5）：事务内校验店铺营业/菜品上架/库存→写主表+明细+行级扣库存→存地址与价格快照；初始 UNPAID；金额以服务端计算为准；令牌无效拒“订单令牌无效或已使用” |
-| /api/order/pay | POST | 登录（归属） | body: orderId | null | ✅ 模拟支付：payStatus→PAID，order_status→PENDING_ACCEPT；条件更新防重复支付 |
+| /api/order/pay | POST | 登录（归属） | body: orderId | null | 事务内锁定本人订单后检查状态及付款期限；创建时间 + orderTimeoutMinutes 到期即取消并在同一事务恢复库存，返回支付失败；未过期时 payStatus→PAID、order_status→PENDING_ACCEPT；与取消的条件更新保证仅一个流转成功 |
 | /api/order/cancel | POST | 登录（归属） | body: orderId | null | ✅ 仅 UNPAID 可取消：→CANCELLED，同事务恢复库存 |
 | /api/order/accept | POST | SHOP（本店） | body: orderId | null | ✅ 接单：PENDING_ACCEPT→PREPARING，记录处理时间；归属校验在 Service |
 | /api/order/reject | POST | SHOP（本店） | body: orderId, reason(必填) | null | ✅ 拒单：→REJECTED；同事务生成 SHOP_AGREED 退款记录、订单 payStatus→REFUNDED 并恢复库存；原因为空不能提交 |

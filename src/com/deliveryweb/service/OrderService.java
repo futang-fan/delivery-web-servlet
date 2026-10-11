@@ -28,9 +28,11 @@ public final class OrderService {
 
     /** 签发幂等令牌：Session 保存，重复签发以最后一次为准 */
     public static String issueToken(HttpSession session) {
-        String token = UUID.randomUUID().toString().replace("-", "");
-        session.setAttribute(Constants.SESSION_ORDER_TOKEN, token);
-        return token;
+        synchronized (session) {
+            String token = UUID.randomUUID().toString().replace("-", "");
+            session.setAttribute(Constants.SESSION_ORDER_TOKEN, token);
+            return token;
+        }
     }
 
     /**
@@ -40,11 +42,19 @@ public final class OrderService {
      */
     public static Map<String, Object> createOrder(HttpSession session, Long customerId,
                                                    Long addressId, String remark, String token) {
+        // 与购物车操作、令牌签发共用会话锁；数据库提交前禁止同一会话再次下单或改动购物车。
+        synchronized (session) {
+            return createOrderLocked(session, customerId, addressId, remark, token);
+        }
+    }
+
+    private static Map<String, Object> createOrderLocked(HttpSession session, Long customerId,
+                                                        Long addressId, String remark, String token) {
         Object expected = session.getAttribute(Constants.SESSION_ORDER_TOKEN);
-        session.removeAttribute(Constants.SESSION_ORDER_TOKEN);
         if (expected == null || token == null || !expected.equals(token)) {
             throw new BizException("订单令牌无效或已使用，请重新提交");
         }
+        session.removeAttribute(Constants.SESSION_ORDER_TOKEN);
         if (remark != null && remark.length() > 100) {
             throw new BizException("订单备注须为 100 字以内");
         }
@@ -55,6 +65,8 @@ public final class OrderService {
             throw new BizException("购物车为空，请先加购");
         }
         Long shopId = (Long) cartView.get("shopId");
+        // 多个顾客按同一顺序锁菜品，避免相反加购顺序导致交叉等待。
+        cartItems.sort(Comparator.comparing(CartItem::getDishId));
 
         Order created = MyBatisUtil.withTx(tx -> {
             ShopDao shopDao = tx.getMapper(ShopDao.class);
@@ -64,7 +76,8 @@ public final class OrderService {
             OrderItemDao itemDao = tx.getMapper(OrderItemDao.class);
 
             Shop shop = shopDao.findById(shopId);
-            if (shop == null || !Constants.BUSINESS_OPEN.equals(shop.getBusinessStatus())) {
+            if (shop == null || !Constants.SHOP_AUDIT_APPROVED.equals(shop.getAuditStatus())
+                    || !Constants.BUSINESS_OPEN.equals(shop.getBusinessStatus())) {
                 throw new BizException("店铺已休息，不能下单");
             }
             Address address = addressDao.findOwned(addressId, customerId);
@@ -76,8 +89,9 @@ public final class OrderService {
             List<OrderItem> items = new ArrayList<>();
             BigDecimal total = BigDecimal.ZERO;
             for (CartItem cartItem : cartItems) {
-                Dish dish = dishDao.findById(cartItem.getDishId());
-                if (dish == null || !Constants.DISH_STATUS_ON_SALE.equals(dish.getStatus())) {
+                Dish dish = dishDao.findByIdForUpdate(cartItem.getDishId());
+                if (dish == null || !shopId.equals(dish.getShopId())
+                        || !Constants.DISH_STATUS_ON_SALE.equals(dish.getStatus())) {
                     throw new BizException("菜品「" + cartItem.getDishName() + "」已下架");
                 }
                 if (dishDao.deductStock(dish.getId(), cartItem.getQuantity(), Constants.DISH_STATUS_ON_SALE) != 1) {
@@ -124,14 +138,38 @@ public final class OrderService {
 
     /** 模拟支付：UNPAID -> PENDING_ACCEPT，payStatus -> PAID 并记录 paid_at；条件更新防重复支付 */
     public static void pay(Long customerId, Long orderId) {
-        Order order = loadOwned(customerId, orderId);
-        OrderStateMachine.assertTransfer(order.getOrderStatus(), Constants.ORDER_PENDING_ACCEPT);
-        LocalDateTime now = LocalDateTime.now();
-        int rows = MyBatisUtil.withTx(tx -> tx.getMapper(OrderDao.class).pay(
-                orderId, Constants.ORDER_UNPAID, Constants.ORDER_PENDING_ACCEPT,
-                Constants.PAY_PAID, now, now));
-        if (rows != 1) {
-            throw new BizException("订单状态已变化，支付失败");
+        if (orderId == null) {
+            throw new BizException("缺少订单参数");
+        }
+        boolean paid = MyBatisUtil.withTx(tx -> {
+            OrderDao dao = tx.getMapper(OrderDao.class);
+            // 等待行锁后再检查状态和时间，避免等锁期间跨过支付期限。
+            Order order = dao.findOwnedForUpdate(orderId, customerId);
+            if (order == null) {
+                throw new BizException("订单不存在或无权操作他人订单");
+            }
+            OrderStateMachine.assertTransfer(order.getOrderStatus(), Constants.ORDER_PENDING_ACCEPT);
+            LocalDateTime now = LocalDateTime.now();
+            if (!order.getCreatedAt().plusMinutes(Constants.ORDER_TIMEOUT_MINUTES).isAfter(now)) {
+                int rows = dao.transferStatus(orderId, Constants.ORDER_UNPAID, Constants.ORDER_CANCELLED, now);
+                if (rows != 1) {
+                    throw new BizException("订单状态已变化，支付失败");
+                }
+                for (OrderItem item : tx.getMapper(OrderItemDao.class).listByOrder(orderId)) {
+                    tx.getMapper(DishDao.class).restoreStock(item.getDishId(), item.getQuantity());
+                }
+                return false;
+            }
+            int rows = dao.pay(orderId, Constants.ORDER_UNPAID, Constants.ORDER_PENDING_ACCEPT,
+                    Constants.PAY_PAID, now, now);
+            if (rows != 1) {
+                throw new BizException("订单状态已变化，支付失败");
+            }
+            return true;
+        });
+        // 超时取消及库存恢复必须先提交，再返回支付失败，不能在事务中抛异常回滚取消。
+        if (!paid) {
+            throw new BizException("订单已超时取消，请重新下单");
         }
     }
 

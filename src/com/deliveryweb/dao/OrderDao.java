@@ -28,6 +28,10 @@ public interface OrderDao {
     @Select("SELECT " + BASE_COLUMNS + " FROM orders WHERE id = #{id} AND customer_id = #{customerId}")
     Order findOwned(@Param("id") Long id, @Param("customerId") Long customerId);
 
+    /** 支付时锁定本人订单；状态与支付期限在持锁事务内判断。 */
+    @Select("SELECT " + BASE_COLUMNS + " FROM orders WHERE id = #{id} AND customer_id = #{customerId} FOR UPDATE")
+    Order findOwnedForUpdate(@Param("id") Long id, @Param("customerId") Long customerId);
+
     /** 通用状态流转条件更新：仅当前状态匹配才生效，返回影响行数（接单/拒单/备餐/取消共用） */
     @Update("UPDATE orders SET order_status = #{targetStatus}, updated_at = #{updatedAt} "
             + "WHERE id = #{id} AND order_status = #{currentStatus}")
@@ -74,8 +78,8 @@ public interface OrderDao {
 
     /** 超时未支付扫描：创建时间早于截止时间的待支付订单 */
     @Select("SELECT " + BASE_COLUMNS + " FROM orders "
-            + "WHERE pay_status = #{payStatus} AND order_status = #{orderStatus} AND created_at < #{cutoff} "
-            + "LIMIT 200")
+            + "WHERE pay_status = #{payStatus} AND order_status = #{orderStatus} AND created_at <= #{cutoff} "
+            + "ORDER BY created_at, id LIMIT 200")
     List<Order> listExpiredUnpaid(@Param("payStatus") String payStatus,
                                   @Param("orderStatus") String orderStatus,
                                   @Param("cutoff") LocalDateTime cutoff);

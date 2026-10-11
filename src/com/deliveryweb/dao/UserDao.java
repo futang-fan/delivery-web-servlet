@@ -64,6 +64,12 @@ public interface UserDao {
     @Update("UPDATE user SET password = #{password} WHERE id = #{id}")
     int updatePassword(@Param("id") Long id, @Param("password") String password);
 
+    /** 旧密码校验后仍须匹配原摘要，避免并发改密/重置覆盖已经更新的密码。 */
+    @Update("UPDATE user SET password = #{password} WHERE id = #{id} AND password = #{expectedPassword} "
+            + "AND status = 'NORMAL'")
+    int changePassword(@Param("id") Long id, @Param("expectedPassword") String expectedPassword,
+                       @Param("password") String password);
+
     /** 更新手机号（账户中心改手机号） */
     @Update("UPDATE user SET phone = #{phone} WHERE id = #{id}")
     int updatePhone(@Param("id") Long id, @Param("phone") String phone);

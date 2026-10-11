@@ -28,6 +28,12 @@ public final class CartService {
 
     /** 当前购物车摘要：shopId、shopName、items（含小计）、totalAmount、isEmpty */
     public static Map<String, Object> list(HttpSession session) {
+        synchronized (session) {
+            return listLocked(session);
+        }
+    }
+
+    private static Map<String, Object> listLocked(HttpSession session) {
         Map<Long, CartItem> cart = getCart(session);
         List<CartItem> items = new ArrayList<>(cart.values());
         BigDecimal total = BigDecimal.ZERO;
@@ -48,6 +54,12 @@ public final class CartService {
 
     /** 加购：校验上下架与库存、同店约束，同一菜品累加数量 */
     public static void add(HttpSession session, Long dishId, Integer quantity) {
+        synchronized (session) {
+            addLocked(session, dishId, quantity);
+        }
+    }
+
+    private static void addLocked(HttpSession session, Long dishId, Integer quantity) {
         if (dishId == null || quantity == null || quantity < 1) {
             throw new BizException("请选择菜品和数量");
         }
@@ -71,7 +83,7 @@ public final class CartService {
         }
 
         CartItem item = cart.get(dishId);
-        int targetQuantity = item == null ? quantity : item.getQuantity() + quantity;
+        long targetQuantity = item == null ? quantity.longValue() : (long) item.getQuantity() + quantity;
         if (targetQuantity > dish.getStock()) {
             throw new BizException("库存不足");
         }
@@ -84,13 +96,19 @@ public final class CartService {
             item.setQuantity(quantity);
             cart.put(dishId, item);
         } else {
-            item.setQuantity(targetQuantity);
+            item.setQuantity((int) targetQuantity);
         }
         session.setAttribute(Constants.SESSION_CART, cart);
     }
 
     /** 修改数量：最小为 1（删除用 remove），校验菜品仍上架且不超库存 */
     public static void updateCount(HttpSession session, Long dishId, Integer quantity) {
+        synchronized (session) {
+            updateCountLocked(session, dishId, quantity);
+        }
+    }
+
+    private static void updateCountLocked(HttpSession session, Long dishId, Integer quantity) {
         Map<Long, CartItem> cart = getCart(session);
         CartItem item = cart.get(dishId);
         if (item == null) {
@@ -115,6 +133,12 @@ public final class CartService {
     }
 
     public static void remove(HttpSession session, Long dishId) {
+        synchronized (session) {
+            removeLocked(session, dishId);
+        }
+    }
+
+    private static void removeLocked(HttpSession session, Long dishId) {
         Map<Long, CartItem> cart = getCart(session);
         cart.remove(dishId);
         if (cart.isEmpty()) {
@@ -125,7 +149,9 @@ public final class CartService {
     }
 
     public static void clear(HttpSession session) {
-        session.removeAttribute(Constants.SESSION_CART);
+        synchronized (session) {
+            session.removeAttribute(Constants.SESSION_CART);
+        }
     }
 
     private static Map<Long, CartItem> getCart(HttpSession session) {

@@ -38,6 +38,7 @@ try {
 }
 
 console.log(bad === 0 ? 'ALL_SYNTAX_OK' : 'SYNTAX_FAIL=' + bad);
+if (bad > 0) process.exitCode = 1;
 
 // 纯函数行为校验：截取 common.js 末尾无 DOM 依赖的 A1/A3/A4 工具段，导入后断言。
 // 截取范围 = A1 标记 → 壳组件标记（壳组件依赖 Vue 运行时编译与 themeMixin，不能进独立模块求值）
@@ -48,6 +49,7 @@ const idx = commonSrc.indexOf(marker);
 const endIdx = commonSrc.indexOf(endMarker);
 if (idx < 0 || endIdx < 0 || endIdx < idx) {
     console.log('HELPERS_SECTION_NOT_FOUND');
+    process.exitCode = 1;
 } else {
     const helperFile = path.join(tmp, 'chk-helpers.mjs');
     fs.writeFileSync(helperFile, commonSrc.slice(idx, endIdx), 'utf8');
@@ -85,5 +87,5 @@ if (idx < 0 || endIdx < 0 || endIdx < idx) {
         console.log((ok ? 'OK   ' : 'FAIL ') + name);
     }
     console.log(hbad === 0 ? 'ALL_HELPERS_OK' : 'HELPERS_FAIL=' + hbad);
-    if (bad === 0 && hbad > 0) process.exitCode = 1;
+    if (hbad > 0) process.exitCode = 1;
 }

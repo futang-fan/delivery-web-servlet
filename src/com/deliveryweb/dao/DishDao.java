@@ -18,6 +18,10 @@ public interface DishDao {
     @Select("SELECT " + BASE_COLUMNS + " FROM dish WHERE id = #{id}")
     Dish findById(@Param("id") Long id);
 
+    /** 下单时锁定菜品，保证价格快照与库存扣减期间资料不会被并发改写。 */
+    @Select("SELECT " + BASE_COLUMNS + " FROM dish WHERE id = #{id} FOR UPDATE")
+    Dish findByIdForUpdate(@Param("id") Long id);
+
     @Select("SELECT " + BASE_COLUMNS + " FROM dish WHERE shop_id = #{shopId} AND name = #{name}")
     Dish findByShopAndName(@Param("shopId") Long shopId, @Param("name") String name);
 
@@ -41,9 +45,13 @@ public interface DishDao {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(Dish dish);
 
-    @Update("UPDATE dish SET name = #{name}, description = #{description}, price = #{price}, "
-            + "stock = #{stock}, image_url = #{imageUrl} WHERE id = #{id} AND shop_id = #{shopId}")
-    int update(Dish dish);
+    /** 资料编辑不写库存；主动调整库存时必须匹配页面读取的原库存，防止覆盖下单扣减。 */
+    @Update("<script>UPDATE dish SET name = #{dish.name}, description = #{dish.description}, "
+            + "price = #{dish.price}, image_url = #{dish.imageUrl} "
+            + "<if test=\"dish.stock != null\">, stock = #{dish.stock} </if>"
+            + "WHERE id = #{dish.id} AND shop_id = #{dish.shopId} "
+            + "<if test=\"dish.stock != null\">AND stock = #{originalStock} </if></script>")
+    int update(@Param("dish") Dish dish, @Param("originalStock") Integer originalStock);
 
     @Update("UPDATE dish SET status = #{status} WHERE id = #{id} AND shop_id = #{shopId}")
     int updateStatus(@Param("id") Long id, @Param("shopId") Long shopId, @Param("status") String status);

@@ -124,7 +124,7 @@
                 notice: '',
                 noticeType: 'error',
                 showForm: false,
-                form: { id: null, name: '', price: '', stock: '', imageUrl: '', description: '' },
+                form: { id: null, name: '', price: '', stock: '', originalStock: null, imageUrl: '', description: '' },
                 lowStockThreshold: LOW_STOCK_THRESHOLD,
                 user: null
             };
@@ -154,11 +154,11 @@
                     this.form = {
                         id: dish.id, name: dish.name,
                         price: dish.price != null ? Number(dish.price) : '',
-                        stock: dish.stock, imageUrl: dish.imageUrl || '',
+                        stock: dish.stock, originalStock: dish.stock, imageUrl: dish.imageUrl || '',
                         description: dish.description || ''
                     };
                 } else {
-                    this.form = { id: null, name: '', price: '', stock: '', imageUrl: '', description: '' };
+                    this.form = { id: null, name: '', price: '', stock: '', originalStock: null, imageUrl: '', description: '' };
                 }
                 this.showForm = true;
                 this.notice = '';
@@ -182,7 +182,9 @@
                         id: f.id || null,
                         name: f.name,
                         price: Number(f.price),
-                        stock: Number(f.stock),
+                        // 原库存未改时仅保存资料，避免把页面旧库存写回数据库。
+                        stock: f.id && stockNum === f.originalStock ? null : stockNum,
+                        originalStock: f.id ? f.originalStock : null,
                         imageUrl: f.imageUrl || null,
                         description: f.description || null
                     });

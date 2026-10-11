@@ -124,7 +124,7 @@ public final class UserService {
 
     /**
      * 修改密码：校验旧密码后更新摘要（账户信息维护）。
-     * 成功后由调用方销毁当前 Session 强制重新登录。
+     * 成功提交后撤销该账号所有会话，强制重新登录。
      */
     public static void changePassword(Long userId, String oldPassword, String newPassword) {
         if (userId == null) {
@@ -140,8 +140,12 @@ public final class UserService {
         if (!PasswordUtil.verify(oldPassword, user.getPassword())) {
             throw new BizException("旧密码错误");
         }
-        MyBatisUtil.withTx(tx -> tx.getMapper(UserDao.class)
-                .updatePassword(userId, PasswordUtil.encode(newPassword)));
+        int rows = MyBatisUtil.withTx(tx -> tx.getMapper(UserDao.class)
+                .changePassword(userId, user.getPassword(), PasswordUtil.encode(newPassword)));
+        if (rows != 1) {
+            throw new BizException("账号状态或密码已变化，请重新登录");
+        }
+        LoginSessions.revoke(userId);
     }
 
     /**
@@ -164,7 +168,7 @@ public final class UserService {
 
     /**
      * 忘记密码第二步：凭管理员下发的一次性验证码重置密码。
-     * 验证码绑定用户名、一次性使用（ResetCodeStore.verifyAndConsume），通过后走原重置逻辑。
+     * 验证码绑定用户名、一次性使用；密码更新提交后撤销目标账号全部会话。
      */
     public static void resetPassword(String username, String code, String newPassword) {
         String name = JsonUtil.trimToNull(username);
@@ -182,8 +186,12 @@ public final class UserService {
         if (user == null) {
             throw new BizException("账号不存在");
         }
-        MyBatisUtil.withTx(tx -> tx.getMapper(UserDao.class)
+        int rows = MyBatisUtil.withTx(tx -> tx.getMapper(UserDao.class)
                 .updatePassword(user.getId(), PasswordUtil.encode(newPassword)));
+        if (rows != 1) {
+            throw new BizException("账号不存在或密码更新失败");
+        }
+        LoginSessions.revoke(user.getId());
     }
 
     /** 手机号脱敏展示：138****0003（管理端找回审批列表用） */
@@ -251,6 +259,9 @@ public final class UserService {
             throw new BizException("用户不存在");
         }
         MyBatisUtil.withTx(tx -> tx.getMapper(UserDao.class).updateStatus(userId, status));
+        if (Constants.USER_STATUS_DISABLED.equals(status)) {
+            LoginSessions.revoke(userId);
+        }
     }
 
     /** 创建骑手账号：角色固定 RIDER，不开放注册；校验口径与注册一致 */

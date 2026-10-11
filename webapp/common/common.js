@@ -18,7 +18,7 @@ export const CTX = location.pathname.startsWith('/DeliveryWeb') ? '/DeliveryWeb'
 /**
  * 统一请求入口：JSON 提交，业务失败（code != 200）与网络异常均抛出 Error，
  * 页面侧只需 try/catch 后展示 e.message。
- * 未登录（HTTP 401）时自动跳转登录页；auth 接口自身除外，避免登录页死循环。
+ * 未登录（HTTP 401）时自动跳转登录页；公开账户接口除外，避免登录页死循环。
  *
  * @param {string} path   接口路径，如 '/api/auth/login'
  * @param {object} [options]
@@ -42,7 +42,9 @@ export async function request(path, { method = 'POST', body } = {}) {
         throw new Error('无法连接服务器，请确认后端已启动');
     }
 
-    if (response.status === 401 && !path.startsWith('/api/auth/')) {
+    const publicAuthPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/logout',
+        '/api/auth/current', '/api/auth/reset-request', '/api/auth/reset-password'];
+    if (response.status === 401 && !publicAuthPaths.includes(path)) {
         location.href = CTX + '/pages/login.html';
         throw new Error('登录已过期，正在返回登录页');
     }

@@ -75,7 +75,8 @@ public class DishServlet extends BaseApiServlet {
                         JsonUtil.longValue(body, "id"),
                         JsonUtil.str(body, "name"),
                         toBigDecimal(body.get("price")),
-                        stockOf(body),
+                        stockOf(body, "stock"),
+                        stockOf(body, "originalStock"),
                         JsonUtil.str(body, "imageUrl"),
                         JsonUtil.str(body, "description"));
                 JsonUtil.writeJson(response, Result.ok("保存成功", null));
@@ -106,21 +107,18 @@ public class DishServlet extends BaseApiServlet {
     }
 
     /** 库存字段：必须为非负整数，拒绝小数/非数字（不允许隐式取整） */
-    private Integer stockOf(Map<String, Object> body) {
-        Object value = body.get("stock");
+    private Integer stockOf(Map<String, Object> body, String key) {
+        Object value = body.get(key);
         if (value == null) {
             return null;
         }
-        if (value instanceof Number) {
-            double d = ((Number) value).doubleValue();
-            if (d != Math.floor(d)) {
+        try {
+            int stock = new BigDecimal(String.valueOf(value).trim()).intValueExact();
+            if (stock < 0) {
                 throw new BizException("库存须为非负整数");
             }
-            return ((Number) value).intValue();
-        }
-        try {
-            return Integer.valueOf(String.valueOf(value).trim());
-        } catch (NumberFormatException e) {
+            return stock;
+        } catch (NumberFormatException | ArithmeticException e) {
             throw new BizException("库存须为非负整数");
         }
     }

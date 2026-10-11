@@ -1,31 +1,35 @@
 package com.deliveryweb.controller;
 
-import com.deliveryweb.dao.UserDao;
 import com.deliveryweb.pojo.User;
 import com.deliveryweb.util.Constants;
 import com.deliveryweb.util.JsonUtil;
-import com.deliveryweb.util.MyBatisUtil;
+import com.deliveryweb.util.LoginSessions;
 import com.deliveryweb.util.Result;
 
 import javax.servlet.*;
 import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * API 鉴权过滤器：/api/auth/* 公开放行，其余 /api/* 一律要求登录（fail-closed），
+ * API 鉴权过滤器：仅明确的公开账户接口放行，其余 /api/* 一律要求有效登录，
  * 再按路径前缀做角色白名单校验；未登录或会话用户已被禁用返回真实 HTTP 401，角色不匹配返回 403，
  * 两者都携带标准 JSON 响应体。店铺归属、订单归属等细分权限由 Service 层校验，
  * 过滤器只做粗粒度的登录态与角色拦截。
  */
 @WebFilter(filterName = "AuthFilter", urlPatterns = "/api/*")
 public class AuthFilter implements Filter {
+
+    private static final Set<String> PUBLIC_POST_PATHS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "/api/auth/login", "/api/auth/register", "/api/auth/logout",
+            "/api/auth/reset-request", "/api/auth/reset-password")));
 
     /** 路径前缀 -> 允许角色白名单；未命中规则的前缀仅要求登录、不限角色。新增 Servlet 时在此补规则 */
     private static final Map<String, Set<String>> ROLE_RULES;
@@ -48,26 +52,19 @@ public class AuthFilter implements Filter {
 
         String path = req.getRequestURI().substring(req.getContextPath().length());
 
-        if (path.startsWith("/api/auth/")) {
+        if ("POST".equals(req.getMethod()) && PUBLIC_POST_PATHS.contains(path)) {
             chain.doFilter(request, response);
             return;
         }
-
-        HttpSession session = req.getSession(false);
-        User user = session == null
-                ? null
-                : (User) session.getAttribute(Constants.SESSION_LOGIN_USER);
+        User user = LoginSessions.validUser(req);
+        // 保留 current 的原约定：匿名查询返回 HTTP 200 + 业务未登录，不返回过期用户资料。
+        if ("GET".equals(req.getMethod()) && "/api/auth/current".equals(path)) {
+            chain.doFilter(request, response);
+            return;
+        }
         if (user == null) {
             res.setStatus(401);
             JsonUtil.writeJson(res, Result.fail("未登录或登录已过期"));
-            return;
-        }
-
-        User latest = MyBatisUtil.withMapper(UserDao.class, dao -> dao.findById(user.getId()));
-        if (latest == null || Constants.USER_STATUS_DISABLED.equals(latest.getStatus())) {
-            session.invalidate();
-            res.setStatus(401);
-            JsonUtil.writeJson(res, Result.fail("该账号已被禁用，请联系平台管理员"));
             return;
         }
 

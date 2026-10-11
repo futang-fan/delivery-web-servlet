@@ -1,13 +1,12 @@
 package com.deliveryweb.controller;
 
 import com.deliveryweb.pojo.User;
-import com.deliveryweb.util.Constants;
+import com.deliveryweb.util.LoginSessions;
 
 import javax.servlet.*;
 import javax.servlet.annotation.WebFilter;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.io.IOException;
 
 /**
@@ -36,10 +35,7 @@ public class PageAuthFilter implements Filter {
             return;
         }
 
-        HttpSession session = req.getSession(false);
-        User user = session == null
-                ? null
-                : (User) session.getAttribute(Constants.SESSION_LOGIN_USER);
+        User user = LoginSessions.validUser(req);
         if (user == null) {
             res.sendRedirect(req.getContextPath() + "/pages/login.html");
             return;

@@ -26,15 +26,18 @@ public final class DishService {
      * 新增或修改菜品：新增默认下架，修改做归属校验。
      */
     public static void save(Long sellerId, Long dishId, String name, BigDecimal price,
-                            Integer stock, String imageUrl, String description) {
+                            Integer stock, Integer originalStock, String imageUrl, String description) {
         if (name == null || name.length() < 1 || name.length() > 50) {
             throw new BizException("菜品名称须为 1-50 个字符");
         }
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0 || price.scale() > 2) {
             throw new BizException("价格须为正数且最多两位小数");
         }
-        if (stock == null || stock < 0) {
+        if ((dishId == null && stock == null) || (stock != null && stock < 0)) {
             throw new BizException("库存须为非负整数");
+        }
+        if (dishId != null && stock != null && (originalStock == null || originalStock < 0)) {
+            throw new BizException("调整库存须提供原库存，请刷新菜品后重试");
         }
         if (description != null && description.length() > 200) {
             throw new BizException("菜品描述不能超过 200 字");
@@ -62,8 +65,8 @@ public final class DishService {
                 dish.setStatus(Constants.DISH_STATUS_OFF_SALE);
                 dish.setCreatedAt(LocalDateTime.now());
                 dao.insert(dish);
-            } else if (dao.update(dish) == 0) {
-                throw new BizException("菜品不存在或无权限");
+            } else if (dao.update(dish, originalStock) == 0) {
+                throw new BizException("菜品不存在、无权限或库存已变化，请刷新后重试");
             }
             return null;
         });

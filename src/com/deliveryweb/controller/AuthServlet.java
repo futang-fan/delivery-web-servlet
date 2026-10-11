@@ -4,6 +4,7 @@ import com.deliveryweb.pojo.User;
 import com.deliveryweb.service.UserService;
 import com.deliveryweb.util.Constants;
 import com.deliveryweb.util.JsonUtil;
+import com.deliveryweb.util.LoginSessions;
 import com.deliveryweb.util.Result;
 
 import javax.servlet.annotation.WebServlet;
@@ -73,12 +74,7 @@ public class AuthServlet extends BaseApiServlet {
                 ? null
                 : String.valueOf(body.get("password"));
 
-        User user = UserService.login(username, password);
-        // 会话固定防护：存在旧会话时先更换 Session ID 再写入登录态（首登无会话则直接新建）
-        if (request.getSession(false) != null) {
-            request.changeSessionId();
-        }
-        saveLoginSession(request, user);
+        User user = LoginSessions.signIn(request, UserService.login(username, password));
         JsonUtil.writeJson(response, Result.ok("登录成功", toUserMap(user)));
     }
 
@@ -97,9 +93,7 @@ public class AuthServlet extends BaseApiServlet {
     private void handleLogout(HttpServletRequest request, HttpServletResponse response)
             throws Exception {
         HttpSession session = request.getSession(false);
-        if (session != null) {
-            session.invalidate();
-        }
+        LoginSessions.invalidate(session);
         JsonUtil.writeJson(response, Result.ok("已退出登录", null));
     }
 
@@ -114,13 +108,11 @@ public class AuthServlet extends BaseApiServlet {
     }
 
     /**
-     * 修改密码：/api/auth/* 被 AuthFilter 放行，登录态在此校验；
-     * 成功后销毁当前 Session 强制重新登录。
+     * 修改密码：AuthFilter 校验有效会话，成功后由 Service 撤销该账号全部会话。
      */
     private void handleChangePassword(HttpServletRequest request, HttpServletResponse response)
             throws Exception {
         User user = currentUser(request);
-        HttpSession session = request.getSession(false);
         if (user == null) {
             JsonUtil.writeJson(response, Result.fail("未登录或登录已过期"));
             return;
@@ -132,7 +124,6 @@ public class AuthServlet extends BaseApiServlet {
                 user.getId(),
                 rawOld == null ? null : String.valueOf(rawOld),
                 rawNew == null ? null : String.valueOf(rawNew));
-        session.invalidate();
         JsonUtil.writeJson(response, Result.ok("密码修改成功，请重新登录", null));
     }
 
@@ -150,7 +141,7 @@ public class AuthServlet extends BaseApiServlet {
     }
 
     /**
-     * 忘记密码第二步：凭管理员下发的一次性验证码重置（公开接口）；成功后销毁当前 Session（若存在）。
+     * 忘记密码第二步：原管理员验证码流程；成功撤销目标账号所有会话，并退出请求方当前会话。
      */
     private void handleResetPassword(HttpServletRequest request, HttpServletResponse response)
             throws Exception {
@@ -161,14 +152,12 @@ public class AuthServlet extends BaseApiServlet {
                 JsonUtil.str(body, "code"),
                 rawNew == null ? null : String.valueOf(rawNew));
         HttpSession session = request.getSession(false);
-        if (session != null) {
-            session.invalidate();
-        }
+        LoginSessions.invalidate(session);
         JsonUtil.writeJson(response, Result.ok("密码重置成功，请重新登录", null));
     }
 
     /**
-     * 修改手机号：/api/auth/* 被 AuthFilter 放行，登录态在此校验；
+     * 修改手机号：AuthFilter 校验有效会话；
      * 成功后同步刷新 Session 内用户手机号（改手机号不强制重登）。
      */
     private void handleUpdateProfile(HttpServletRequest request, HttpServletResponse response)
@@ -179,26 +168,14 @@ public class AuthServlet extends BaseApiServlet {
             return;
         }
         Map<String, Object> body = JsonUtil.parseBody(request);
-        User updated = UserService.updateProfile(user.getId(), JsonUtil.str(body, "phone"));
-        saveLoginSession(request, updated);
+        UserService.updateProfile(user.getId(), JsonUtil.str(body, "phone"));
+        User updated = LoginSessions.validUser(request);
+        if (updated == null) {
+            response.setStatus(401);
+            JsonUtil.writeJson(response, Result.fail("未登录或登录已过期"));
+            return;
+        }
         JsonUtil.writeJson(response, Result.ok("手机号修改成功", toUserMap(updated)));
-    }
-
-    /**
-     * 将登录用户写入 Session；Session 中不保存密码等敏感信息。
-     */
-    private void saveLoginSession(HttpServletRequest request, User source) {
-        User safeUser = new User();
-        safeUser.setId(source.getId());
-        safeUser.setUsername(source.getUsername());
-        safeUser.setRole(source.getRole());
-        safeUser.setPhone(source.getPhone());
-        safeUser.setStatus(source.getStatus());
-        safeUser.setCreatedAt(source.getCreatedAt());
-
-        HttpSession session = request.getSession(true);
-        session.setAttribute(com.deliveryweb.util.Constants.SESSION_LOGIN_USER, safeUser);
-        session.setMaxInactiveInterval(30 * 60);
     }
 
     /**
